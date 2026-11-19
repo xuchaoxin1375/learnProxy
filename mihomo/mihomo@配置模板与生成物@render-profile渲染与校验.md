@@ -13,6 +13,7 @@ templates/spider_lb.profiles.local.json    可选本地私有清单，存在时�
             │
             ▼  render_profile.py
 ~/Desktop/mihomo-profiles/default.generated.yaml        生成物，头部有修订日期与生成指纹
+~/Desktop/mihomo-profiles/spider_lb_robin.generated.yaml 生成物
 ~/Desktop/mihomo-profiles/spider_lb_ch.generated.yaml   生成物
 ~/Desktop/mihomo-profiles/spider_lb_sticky.generated.yaml 生成物
 （没有 Desktop 目录时回退 ~/mihomo-profiles）
@@ -38,9 +39,9 @@ mihomo_provider.py         上述脚本共用的 API、路径与运行时定位
 | --- | --- | --- |
 | `templates/spider_lb.template.yaml` | 配置正文，含 `{{...}}` 占位符与生成标记 | 改这里 |
 | `templates/spider_lb.profiles.json` | 公开的 `defaults` + 每份产物的订阅、端口、策略（订阅为占位） | 改结构或占位值 |
-| `templates/spider_lb.profiles.local.example.json` | 本地私有清单骨架：三份 profile、管理端口和订阅占位符 | 复制成 `.local.json` 后再填真实订阅 |
+| `templates/spider_lb.profiles.local.example.json` | 本地私有清单骨架：三套后台服务 profile、default 和管理端口、订阅占位符 | 复制成 `.local.json` 后再填真实订阅 |
 | `templates/spider_lb.profiles.local.json` | 可选的本地私有清单，放真实订阅；已被 `.gitignore` 忽略 | 本地改这里，不提交 |
-| `<输出目录>/default.generated.yaml`、`spider_lb_ch.generated.yaml`、`spider_lb_sticky.generated.yaml` | 生成物，头部有修订日期与 `# 生成指纹:sha256:...`；`<输出目录>` 默认是 `~/Desktop/mihomo-profiles`，无桌面目录时是 `~/mihomo-profiles` | 不要手改，会被覆盖或触发 `--force` 要求 |
+| `<输出目录>/default.generated.yaml`、`spider_lb_robin.generated.yaml`、`spider_lb_ch.generated.yaml`、`spider_lb_sticky.generated.yaml` | 生成物，头部有修订日期与 `# 生成指纹:sha256:...`；`<输出目录>` 默认是 `~/Desktop/mihomo-profiles`，无桌面目录时是 `~/mihomo-profiles` | 不要手改，会被覆盖或触发 `--force` 要求 |
 | `render_profile.py` | 渲染、指纹校验、可选跑 `mihomo -t` | 工具本身 |
 | `mihomo_instance.py` | 校验、启动、查看和停止独立 mihomo 实例；PID 文件与日志落在实例目录 | 只停自己 PID 文件记录的进程 |
 
@@ -126,6 +127,15 @@ python3 render_profile.py --manifest templates/spider_lb.profiles.local.json
   },
   "profiles": [
     { "name": "default.generated.yaml" },
+    {
+      "name": "spider_lb_robin.generated.yaml",
+      "description": "后台服务 A:入口 171xx,按连接轮询换出口",
+      "portAll": 17100,
+      "portEu": 17110,
+      "mixedPort": 17797,
+      "externalControllerPort": 18997,
+      "strategy": "round-robin"
+    },
     {
       "name": "spider_lb_ch.generated.yaml",
       "description": "对齐版本:入口 172xx,同一目标固定出口",
@@ -248,34 +258,40 @@ proxy-providers:
 
 选 1xxxx 的原因：避开 7890-7899（Clash/mihomo 客户端）、9090/9091/9097（API）、1080/1081/10808-10810 等常见端口，也低于系统临时端口区间（Windows 49152+、Linux 32768+）。每段留 79 个国家位，当前用 10 个（含 uk）。
 
-三份 profile 的监听 band 不重叠（171xx / 172xx / 173xx），管理端口也已分开：
+三套后台服务 profile 的监听 band 不重叠（171xx / 172xx / 173xx），管理端口也已分开；`default` 是 GUI/legacy：
 
 | profile | mixedPort | externalControllerPort | 典型用途 |
 | --- | --- | --- | --- |
-| `default` | 7897 | 9097 | Clash Verge 当前实例 |
-| `spider_lb_ch` | 17897 | 19097 | 独立实例，172xx |
-| `spider_lb_sticky` | 17997 | 19197 | 独立实例，173xx |
+| `default` | 7897 | 9097 | GUI/legacy，不要和 robin 同时启动 |
+| `spider_lb_robin` | 17797 | 18997 | 后台服务 A，171xx |
+| `spider_lb_ch` | 17897 | 19097 | 后台服务 B，172xx |
+| `spider_lb_sticky` | 17997 | 19197 | 后台服务 B，173xx |
 
-`external-controller-pipe` 仍固定为 `\\.\pipe\verge-mihomo`；同一台机并行跑两份 B 配置时，要把它改成不同名字或删除。只有 A 开 TUN，B 保持 `tun.enable: false`。
+模板不再写 `external-controller-pipe`，后台实例统一用 TCP `external-controller`；Clash Verge 启动内核时会用自己的 `-ext-ctl-pipe`。因此 A、B、C 可以同时运行；只有需要 TUN 的实例开 `tun.enable`。
 
 ## 多实例启动
 
-先渲染目标 profile，再用 `mihomo_instance.py` 校验和启动；`--home` 用独立目录，不要和 Clash Verge 共用：
+先渲染目标 profile，再用 `mihomo_instance.py` 校验和启动；每个实例用独立 `--home`，不要和 Clash Verge 共用：
 
 ```bash
-python3 mihomo_instance.py validate \
-  --config ~/Desktop/mihomo-profiles/spider_lb_ch.generated.yaml \
-  --home ~/mihomo-sticky/ch --mihomo /path/to/mihomo
+# A：171xx 轮询
+python3 mihomo_instance.py start \
+  --config ~/Desktop/mihomo-profiles/spider_lb_robin.generated.yaml \
+  --home ~/mihomo-sticky/robin --mihomo /path/to/mihomo
 
+# B：172xx 目标粘性
 python3 mihomo_instance.py start \
   --config ~/Desktop/mihomo-profiles/spider_lb_ch.generated.yaml \
   --home ~/mihomo-sticky/ch --mihomo /path/to/mihomo
 
-python3 mihomo_instance.py status --home ~/mihomo-sticky/ch
+# 查看所有实例
+python3 mihomo_instance.py list --root ~/mihomo-sticky
+
+# 单独停止
 python3 mihomo_instance.py stop --home ~/mihomo-sticky/ch
 ```
 
-`stop` 只停 PID 文件里记录的进程，不会按进程名误伤 Clash Verge。
+A、B 可以同时运行；173xx 的 `spider_lb_sticky` 也按同样方式启动。`stop` 只停 PID 文件里记录的进程，不会按进程名误伤 Clash Verge。
 
 ## 端口两种模式
 

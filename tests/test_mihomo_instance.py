@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -118,6 +119,31 @@ class CliTests(unittest.TestCase):
             self.assertEqual(code, mi.EXIT_OK)
             self.assertIn("-d", stdout)
             self.assertIn(str(config), stdout)
+
+    def test_list_empty_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            code, stdout, _ = run_main(["list", "--root", tmp])
+            self.assertEqual(code, mi.EXIT_STATE)
+            self.assertIn("没有实例", stdout)
+
+    def test_list_missing_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            code, stdout, _ = run_main(["list", "--root", str(Path(tmp) / "missing")])
+            self.assertEqual(code, mi.EXIT_STATE)
+            self.assertIn("没有实例", stdout)
+
+    def test_list_running_instance(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            instance = Path(tmp) / "robin"
+            instance.mkdir()
+            mi.write_pid_file(
+                instance / "mihomo.pid",
+                {"pid": os.getpid(), "home": str(instance), "config": "config.yaml"},
+            )
+            code, stdout, _ = run_main(["list", "--root", tmp])
+            self.assertEqual(code, mi.EXIT_OK)
+            self.assertIn("robin", stdout)
+            self.assertIn("运行中", stdout)
 
 
 if __name__ == "__main__":

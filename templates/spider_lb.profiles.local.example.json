@@ -1,5 +1,5 @@
 {
-  "_readme": "复制本文件为 templates/spider_lb.profiles.local.json 后填写真实订阅；该文件已被 .gitignore 忽略，不会提交。render_profile.py 会自动优先读取 .local.json。也可以把本文件复制到桌面或任意私有目录，用 --manifest /path/to/private.json 指定。不要编辑生成的 *.generated.yaml，也不要把真实订阅写进公开的 spider_lb.profiles.json。default.generated.yaml 对应 A（7897/9097），已有 Clash Verge 时不要再启动；B 用 spider_lb_ch 或 spider_lb_sticky。",
+  "_readme": "复制本文件为 templates/spider_lb.profiles.local.json 后填写真实订阅；该文件已被 .gitignore 忽略，不会提交。render_profile.py 会自动优先读取 .local.json。也可以把本文件复制到桌面或任意私有目录，用 --manifest /path/to/private.json 指定。不要编辑生成的 *.generated.yaml，也不要把真实订阅写进公开的 spider_lb.profiles.json。默认后台服务多实例：spider_lb_robin（171xx 轮询）、spider_lb_ch（172xx 目标粘性）、spider_lb_sticky（173xx 会话粘性）；default 仅作 GUI/legacy，已有 Clash Verge 时不要再启动它。",
   "template": "spider_lb.template.yaml",
   "defaults": {
     "description": "本地私有配置:入口 171xx,按连接轮询换出口",
@@ -18,6 +18,15 @@
   "profiles": [
     {
       "name": "default.generated.yaml"
+    },
+    {
+      "name": "spider_lb_robin.generated.yaml",
+      "description": "后台服务 A:入口 171xx,按连接轮询换出口",
+      "portAll": 17100,
+      "portEu": 17110,
+      "mixedPort": 17797,
+      "externalControllerPort": 18997,
+      "strategy": "round-robin"
     },
     {
       "name": "spider_lb_ch.generated.yaml",

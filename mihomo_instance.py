@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""管理独立的 mihomo 实例：校验、启动、状态与停止。
+"""管理独立的 mihomo 实例：校验、启动、列出、状态与停止。
 
 用于在同一台机器上额外运行一个 mihomo 内核。例如 Clash Verge 继续跑
 171xx 的 round-robin，本脚本管理的实例跑 172xx/173xx 的粘性配置。
@@ -378,11 +378,46 @@ def cmd_status(args: argparse.Namespace) -> int:
     return EXIT_OK if running else EXIT_STATE
 
 
+def cmd_list(args: argparse.Namespace) -> int:
+    root = Path(args.root).expanduser().resolve()
+    if not root.is_dir():
+        print(f"没有实例 PID 文件: {root}")
+        return EXIT_STATE
+    entries: list[dict[str, Any]] = []
+    for pid_file in sorted(root.glob("*/mihomo.pid")):
+        data = read_pid_file(pid_file)
+        if not data:
+            continue
+        pid = data["pid"]
+        entries.append(
+            {
+                "name": pid_file.parent.name,
+                "pid": pid,
+                "running": process_alive(pid),
+                "config": data.get("config", ""),
+                "home": data.get("home", ""),
+                "log": data.get("log", ""),
+                "pid_file": str(pid_file),
+            }
+        )
+    if args.json:
+        print(json.dumps(entries, ensure_ascii=False, indent=2))
+    elif not entries:
+        print(f"没有实例 PID 文件: {root}")
+    else:
+        for entry in entries:
+            state = "运行中" if entry["running"] else "已停止"
+            print(f"{entry['name']}: {state}, PID {entry['pid']}")
+            print(f"  配置: {entry['config']}")
+            print(f"  工作目录: {entry['home']}")
+    return EXIT_OK if any(entry["running"] for entry in entries) else EXIT_STATE
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = ArgumentParser(
         prog="mihomo_instance.py",
         description=(
-            "管理独立的 mihomo 实例：validate / start / status / stop。"
+            "管理独立的 mihomo 实例：validate / start / list / status / stop。"
             "只操作脚本自己用 PID 文件记录的进程，不按进程名清理。"
         ),
         epilog=(
@@ -391,6 +426,7 @@ def build_parser() -> argparse.ArgumentParser:
             "示例:\n"
             "  python mihomo_instance.py validate --config ./config.yaml --mihomo /path/to/mihomo\n"
             "  python mihomo_instance.py start --config ./config.yaml --home ./runtime --mihomo /path/to/mihomo\n"
+            "  python mihomo_instance.py list --root ./runtime\n"
             "  python mihomo_instance.py status --home ./runtime\n"
             "  python mihomo_instance.py stop --home ./runtime"
         ),
@@ -433,6 +469,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_status.add_argument("--pid-file", help="PID 文件；与 --home 二选一")
     p_status.add_argument("--home", help="工作目录；用它定位 <home>/mihomo.pid")
     p_status.add_argument("--json", action="store_true", help="输出 JSON")
+
+    p_list = sub.add_parser("list", help="列出实例根目录下的所有后台实例")
+    p_list.add_argument(
+        "--root",
+        default="~/mihomo-sticky",
+        help="实例根目录，默认 ~/mihomo-sticky；扫描 <root>/*/mihomo.pid",
+    )
+    p_list.add_argument("--json", action="store_true", help="输出 JSON")
     return parser
 
 
@@ -448,6 +492,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_stop(args)
         if args.command == "status":
             return cmd_status(args)
+        if args.command == "list":
+            return cmd_list(args)
         raise InstanceError(f"未知命令: {args.command}")
     except InstanceError as exc:
         print(f"错误: {exc}", file=sys.stderr)

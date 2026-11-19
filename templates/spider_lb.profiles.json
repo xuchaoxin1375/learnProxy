@@ -20,6 +20,15 @@
       "name": "default.generated.yaml"
     },
     {
+      "name": "spider_lb_robin.generated.yaml",
+      "description": "后台服务 A:入口 171xx,按连接轮询换出口",
+      "portAll": 17100,
+      "portEu": 17110,
+      "mixedPort": 17797,
+      "externalControllerPort": 18997,
+      "strategy": "round-robin"
+    },
+    {
       "name": "spider_lb_ch.generated.yaml",
       "description": "对齐版本:入口 172xx,同一目标固定出口",
       "subscriptions": {

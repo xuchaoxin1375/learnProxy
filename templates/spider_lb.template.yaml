@@ -16,9 +16,8 @@ external-controller: 127.0.0.1:{{EXTERNAL_CONTROLLER_PORT}}
 # 需要局域网面板时才改成 0.0.0.0:<port>,并把 secret 换成随机长串(现在这个值只够本机使用)
 secret: '1'
 
-# 供mihomo客户端使用(例如clash-verge等GUI客户端),命名管道不校验 secret,本机进程皆可控制
-# 多实例时改成不同 pipe 名，或删除此行走 TCP 控制器
-external-controller-pipe: \\.\pipe\verge-mihomo
+# 后台服务模式默认只用 TCP external-controller；不写命名管道，避免多实例争用同一个 pipe。
+# Clash Verge 等 GUI 启动内核时会用自己的 -ext-ctl-pipe，不依赖本字段。
 
 # 允许公网网页访问本机mihomo的api接口(白名单列表),只放行自己实际在用的面板
 external-controller-cors:

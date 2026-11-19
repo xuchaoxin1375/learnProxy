@@ -22,6 +22,7 @@ python3 render_profile.py --test --mihomo-home <HomeDir>   # 渲染后跑 mihomo
 
 python3 mihomo_instance.py validate --config <config.yaml> --mihomo <mihomo>
 python3 mihomo_instance.py start --config <config.yaml> --home <实例目录> --mihomo <mihomo>
+python3 mihomo_instance.py list --root <实例根目录>
 python3 mihomo_instance.py status --home <实例目录>
 python3 mihomo_instance.py stop --home <实例目录>
 
@@ -45,14 +46,14 @@ python3 render_profile.py --manifest ~/Desktop/spider_lb.profiles.local.json
 
 不要编辑 `~/Desktop/mihomo-profiles/*.generated.yaml`：那是渲染产物，手改会被指纹校验拒绝覆盖；真实订阅只写私有清单。
 
-改了模板或清单后重新渲染；默认生成到 `~/Desktop/mihomo-profiles`（没有 `Desktop` 目录时回退 `~/mihomo-profiles`），`--list` / `--dry-run` 会打印实际输出目录。生成物不会自动同步到 Clash Verge，仍需在 GUI 里重新应用当前 profile。
+改了模板或清单后重新渲染；默认生成到 `~/Desktop/mihomo-profiles`（没有 `Desktop` 目录时回退 `~/mihomo-profiles`），`--list` / `--dry-run` 会打印实际输出目录。后台服务模式用 `mihomo_instance.py start` 直接启动生成物；只有想把生成物当 GUI profile 时，才需要在 GUI 里重新应用。
 
 ## 脚本职责
 
 | 路径 | 职责 | 读写行为 |
 | --- | --- | --- |
 | `render_profile.py` | 从模板与 `profiles.json`（或 `--manifest` 指定的本地清单）渲染 profile，指纹校验，`--manifest` / `--list` / `--print` / `--check` / `--test` | 默认写 `~/Desktop/mihomo-profiles/*.generated.yaml`；无桌面目录时回退 `~/mihomo-profiles` |
-| `mihomo_instance.py` | 校验、启动、查看和停止独立 mihomo 实例；PID 文件与日志落在实例目录 | 写实例目录；只停自己 PID 文件记录的进程，不按进程名清理 |
+| `mihomo_instance.py` | 校验、启动、列出、查看和停止独立 mihomo 实例；PID 文件与日志落在实例目录 | 写实例目录；只停自己 PID 文件记录的进程，不按进程名清理 |
 | `check_provider_status.py` | 检查 proxy-provider / rule-provider 新鲜度、订阅用量、缓存路径 | 只读，仅 `GET` 与本地文件检查 |
 | `trigger_provider_update.py` | 手动触发订阅或规则集更新、单 provider 测速 | 写操作，会真实下载并消耗流量 |
 | `mihomo_provider.py` | 上面脚本共用的 API、运行时定位、缓存路径、输出格式化 | 工具模块，不单独运行 |
@@ -99,24 +100,24 @@ python3 render_profile.py --manifest ~/Desktop/spider_lb.profiles.local.json
 
 自建节点文件不随仓库提供。需要接回本地节点时，把节点 YAML 放到本地未入库目录（例如仓库根的 `profiles/`，需要时新建；相关文件名已在 `.gitignore` 中），再按 `templates/spider_lb.template.yaml` 里的注释示例启用本地 provider，最后在 GUI 里重新应用配置。模板与示例文件里的 IP、UUID、Reality 密钥与密码都只是占位示例。
 
-## 多实例：轮询与粘性并存
+## 后台服务模式：多实例负载均衡
 
-同一台机可以同时跑 Clash Verge 和一个独立 mihomo 实例；关键是管理端口和入口端口都不能撞。当前模板的端口分工：
+负载均衡默认由 `mihomo_instance.py` 以独立后台实例管理，不依赖切换 Clash Verge profile。每份 profile 有自己的管理端口和入口 band，可以同时运行：
 
 | 实例 | 管理端口 | 业务入口 | 策略 | 典型用途 |
 | --- | --- | --- | --- | --- |
-| A：Clash Verge | `7897` / `9097` | `171xx` | `round-robin` | 429、Shopify `/products.json` 等需要轮换 IP 的任务 |
-| B：独立 mihomo | `17897` / `19097` | `172xx` | `consistent-hashing` | 反爬/会话站，同一目标固定出口 |
-| B：独立 mihomo | `17997` / `19197` | `173xx` | `sticky-sessions` | 10 分钟会话粘性；按需使用 |
+| A：`spider_lb_robin` | `17797` / `18997` | `171xx` | `round-robin` | 429、Shopify `/products.json` 等需要轮换 IP 的任务 |
+| B：`spider_lb_ch` | `17897` / `19097` | `172xx` | `consistent-hashing` | 反爬/会话站，同一目标固定出口 |
+| B：`spider_lb_sticky` | `17997` / `19197` | `173xx` | `sticky-sessions` | 10 分钟会话粘性；按需使用 |
+| GUI：雪山 Link 等 | `7897` / `9097` | 无 | 日常 | 日常浏览，不承载采集负载均衡 |
 
-- `spider_lb_ch.generated.yaml` 是 172xx + `consistent-hashing`，管理端口 17897/19097。
-- `spider_lb_sticky.generated.yaml` 是 173xx + `sticky-sessions`，管理端口 17997/19197。
-- `default.generated.yaml` 对应 A（7897/9097）；已有 Clash Verge 时不要再启动它，避免端口冲突。
-- 爬虫侧：A 用 `http://127.0.0.1:17111`（美国轮询），B 用 `http://127.0.0.1:17211`（美国粘性）或 `http://127.0.0.1:17311`（美国会话粘性）；`+0` 的 `17100/17200/17300` 是不分国家的 all 入口。
-- 两份 B 配置不要同时启动，除非你把 `external-controller-pipe` 也改成不同名字；它们共用模板里的 pipe。
-- 只有 A 开 TUN；B 的 `tun.enable` 保持 `false`。
-- 每份 B 配置用独立 `--home`，不要和 Clash Verge 的 `-d` 共用。
-- `mihomo_instance.py stop` 只停自己 PID 文件里的进程，不会碰 Clash Verge 的内核。
+- 默认启动 A + B；173xx 按需再启动。三份都有独立管理端口，模板不再写 `external-controller-pipe`，可以同时运行。
+- `default.generated.yaml` 仍是 GUI/legacy 的 171xx + 7897/9097；不要把它当后台服务启动，会和 A 的 171xx 撞。如果切回 GUI 的 `default.generated.yaml`，也先停 `spider_lb_robin`。
+- 爬虫侧：A 用 `http://127.0.0.1:17111`，B 用 `http://127.0.0.1:17211` 或 `http://127.0.0.1:17311`；`+0` 的 `17100/17200/17300` 是不分国家的 all 入口。
+- 每个实例用独立 `--home`，不要和 Clash Verge 的 `-d` 共用。
+- 只有需要 TUN 的实例开 `tun.enable`，其余保持 `false`。
+- `mihomo_instance.py stop` 只停自己 PID 文件记录的进程，不会碰 Clash Verge 的内核。
+- `mihomo_instance.py list` 查看当前根目录下的所有后台实例。
 
 ## 文档入口
 
