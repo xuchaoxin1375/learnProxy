@@ -71,14 +71,14 @@ proxy-providers:
     interval: 3600
     proxy: DIRECT
     size-limit: 0
-    age-secret-key: AGE-SECRET-KEY-1ZTQLLN0A4U3ZTT3DCZKYN0CGZEZQLWX2DFTXUWMT4ZHR0N2UG6LSW9NT0N
+    age-secret-key: "AGE-SECRET-KEY-1<YOUR_AGE_SECRET_KEY>"
     header:
       User-Agent:
       - "mihomo/1.18.3"
       Authorization:
       - 'token 1231231'
       # X-Age-Public-Key:
-      # - 'age1xh86kh9v23vattr58yedspm3f57sxvnswu9krr6ns438amekx5gsd09uma'
+      # - 'age1<YOUR_AGE_PUBLIC_KEY>'
     health-check:
       enable: true
       url: https://www.gstatic.com/generate_204
@@ -134,7 +134,7 @@ proxy-providers:
       # Authorization:
       # - 'token 1231231'
       # X-Age-Public-Key:
-      # - 'age1xh86kh9v23vattr58yedspm3f57sxvnswu9krr6ns438amekx5gsd09uma'
+      # - 'age1<YOUR_AGE_PUBLIC_KEY>'
     health-check:
       enable: true
       interval: 600

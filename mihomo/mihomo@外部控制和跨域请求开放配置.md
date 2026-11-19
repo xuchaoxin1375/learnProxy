@@ -338,7 +338,7 @@ secret: '1'
 建议使用随机密钥，例如：
 
 ```yaml
-secret: "8caa4c67695e5f7f9a934c97de058772a7fcff655a6aec3ee9f965861e66ab28"
+secret: "<YOUR_RANDOM_SECRET>"
 ```
 
 PowerShell 可以生成随机密钥：

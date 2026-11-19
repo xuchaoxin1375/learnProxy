@@ -1,5 +1,5 @@
 # 本文件是 mihomo 官方完整配置示例（docs/config.yaml）的中文注释副本。
-# 文件中的 UUID、密码、private-key、AGE-SECRET-KEY 等均为官方示例值，不是真实凭据。
+# 文件中的 UUID、密码、private-key 等为官方示例值；密钥类字段已改为明显占位符（如 <YOUR_...>），不是真实凭据。
 #
 # port: 7890 # HTTP(S) 代理服务器端口
 # socks-port: 7891 # SOCKS5 代理端口
@@ -1100,9 +1100,9 @@ proxies: # socks5
     port: 2480
     ip: 172.16.0.2
     ipv6: fd01:5ca1:ab1e:80fa:ab85:6eea:213f:f4a5
-    public-key: Cr8hWlKvtDt7nrvf+f0brNQQzabAqrjfBvas9pmowjo=
-    #    pre-shared-key: 31aIhAPwktDGpH4JDhA8GNvjFXEf/a6+UaQRyOAiyfM=
-    private-key: eCtXsJZ27+4PbhDkHnB923tkUn2Gj59wZw5wFA75MnU=
+    public-key: "<YOUR_WIREGUARD_PUBLIC_KEY>"
+    #    pre-shared-key: "<YOUR_PRESHARED_KEY>"
+    private-key: "<YOUR_WIREGUARD_PRIVATE_KEY>"
     udp: true
     reserved: "U4An"
     # 数组格式也是合法的
@@ -1191,11 +1191,9 @@ proxies: # socks5
       -----BEGIN CERTIFICATE-----
       MIIB...example
       -----END CERTIFICATE-----
-    # 从 .ovpn 中复制 <key></key> 内的内容
+    # 从 .ovpn 中复制 <key></key> 内的完整 PEM；这里用占位符，不要提交真实私钥
     key: |
-      -----BEGIN PRIVATE KEY-----
-      MIIE...example
-      -----END PRIVATE KEY-----
+      <YOUR_PRIVATE_KEY_PEM>
     # 从 .ovpn 中复制 <tls-crypt></tls-crypt> 内的内容，不需要保留 <tls-crypt> 标签；没有 tls-crypt 的配置可省略
     # tls-crypt: |
     #   -----BEGIN OpenVPN Static key V1-----
@@ -1216,8 +1214,8 @@ proxies: # socks5
     type: masque
     server: 162.159.198.1
     port: 443
-    private-key: MHcCAQEEILI1eOtnbEIh89Fj4yNDuFR6UjayCKI3NdLl3DhetimWoAoGCCqGSM49AwEHoUQDQgAEgyXrE8v+hHsHy3ewSb3WcRjYgCrM9T9hiE0Uv6k2DZ1+4kefrDT9v1Q/8wdRigTf6t6gGNUV8W+IUMdrfUt+9g==
-    public-key: MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEIaU7MToJm9NKp8YfGxR6r+/h4mcG7SxI8tsW8OR1A5tv/zCzVbCRRh2t87/kxnP6lAy0lkr7qYwu+ox+k3dr6w==
+    private-key: "<YOUR_MASQUE_PRIVATE_KEY>"
+    public-key: "<YOUR_MASQUE_PUBLIC_KEY>"
     ip: 172.16.0.2
     ipv6: 2606:4700:110:84c0:163a:4914:a0ad:3342
     mtu: 1280
@@ -1233,8 +1231,8 @@ proxies: # socks5
     type: masque
     server: 162.159.198.2
     port: 443
-    private-key: MHcCAQEEILI1eOtnbEIh89Fj4yNDuFR6UjayCKI3NdLl3DhetimWoAoGCCqGSM49AwEHoUQDQgAEgyXrE8v+hHsHy3ewSb3WcRjYgCrM9T9hiE0Uv6k2DZ1+4kefrDT9v1Q/8wdRigTf6t6gGNUV8W+IUMdrfUt+9g==
-    public-key: MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEIaU7MToJm9NKp8YfGxR6r+/h4mcG7SxI8tsW8OR1A5tv/zCzVbCRRh2t87/kxnP6lAy0lkr7qYwu+ox+k3dr6w==
+    private-key: "<YOUR_MASQUE_PRIVATE_KEY>"
+    public-key: "<YOUR_MASQUE_PUBLIC_KEY>"
     ip: 172.16.0.2
     ipv6: 2606:4700:110:84c0:163a:4914:a0ad:3342
     mtu: 1280
@@ -1488,7 +1486,7 @@ proxy-providers:
     # # 参考实现：
     # #   https://github.com/FiloSottile/awesome-age#implementations
     # #
-    # age-secret-key: AGE-SECRET-KEY-1ZTQLLN0A4U3ZTT3DCZKYN0CGZEZQLWX2DFTXUWMT4ZHR0N2UG6LSW9NT0N
+    # age-secret-key: "AGE-SECRET-KEY-1<YOUR_AGE_SECRET_KEY>"
     header:
       User-Agent:
       - "Clash/v1.18.0"
@@ -1498,7 +1496,7 @@ proxy-providers:
       # Authorization:
       # - 'token 1231231'
       # X-Age-Public-Key:
-      # - 'age1xh86kh9v23vattr58yedspm3f57sxvnswu9krr6ns438amekx5gsd09uma'
+      # - 'age1<YOUR_AGE_PUBLIC_KEY>'
     health-check:
       enable: true
       interval: 600
@@ -1713,7 +1711,7 @@ listeners:
     listen: 0.0.0.0
     # rule: sub-rule-name1 # 默认使用 rules，如果未找到 sub-rule 则直接使用 rules
     # proxy: proxy # 如果不为空则直接将该入站流量交由指定 proxy 处理 (当 proxy 不为空时，这里的 proxy 名称必须合法，否则会出错)
-    password: vlmpIPSyHH6f4S8WVPdRIHIlzmB+GIRfoH3aNJ/t9Gg=
+    password: "<YOUR_SHADOWSOCKS_PASSWORD>"
     cipher: 2022-blake3-aes-256-gcm
     # simple-obfs:
     #   enable: false # 设置为true时开启
@@ -1775,7 +1773,7 @@ listeners:
     # proxy: proxy # 如果不为空则直接将该入站流量交由指定 proxy 处理 (当 proxy 不为空时，这里的 proxy 名称必须合法，否则会出错)
     users:
       - username: 1
-        uuid: 9d0cb9d0-964f-4ef6-897d-6c6b3ccf9e68
+        uuid: 00000000-0000-4000-8000-000000000000
         alterId: 1
     # ws-path: "/" # 如果不为空则开启 websocket 传输层
     # grpc-service-name: "GunService" # 如果不为空则开启 grpc 传输层
@@ -1795,7 +1793,7 @@ listeners:
     # 如果填写reality-config则开启reality（注意不可与certificate和private-key同时填写）
     # reality-config:
     #   dest: test.com:443
-    #   private-key: jNXHt1yRo0vDuchQlIP6Z0ZvjT3KtzVI-T4E7RoLJS0 # 可由 mihomo generate reality-keypair 命令生成
+    #   private-key: "<YOUR_REALITY_PRIVATE_KEY>" # 可由 mihomo generate reality-keypair 命令生成
     #   short-id:
     #     - 0123456789abcdef
     #   server-names:
@@ -1859,7 +1857,7 @@ listeners:
     # proxy: proxy # 如果不为空则直接将该入站流量交由指定 proxy 处理 (当 proxy 不为空时，这里的 proxy 名称必须合法，否则会出错)
     users:
       - username: 1
-        uuid: 9d0cb9d0-964f-4ef6-897d-6c6b3ccf9e68
+        uuid: 00000000-0000-4000-8000-000000000000
         flow: xtls-rprx-vision
     # ws-path: "/" # 如果不为空则开启 websocket 传输层
     # grpc-service-name: "GunService" # 如果不为空则开启 grpc 传输层
@@ -1914,7 +1912,7 @@ listeners:
     # 如果填写reality-config则开启reality（注意不可与certificate和private-key同时填写）
     reality-config:
       dest: test.com:443
-      private-key: jNXHt1yRo0vDuchQlIP6Z0ZvjT3KtzVI-T4E7RoLJS0 # 可由 mihomo generate reality-keypair 命令生成
+      private-key: "<YOUR_REALITY_PRIVATE_KEY>" # 可由 mihomo generate reality-keypair 命令生成
       short-id:
         - 0123456789abcdef
       server-names:
@@ -2000,7 +1998,7 @@ listeners:
     # proxy: proxy # 如果不为空则直接将该入站流量交由指定 proxy 处理 (当 proxy 不为空时，这里的 proxy 名称必须合法，否则会出错)
     users:
       - username: 1
-        password: 9d0cb9d0-964f-4ef6-897d-6c6b3ccf9e68
+        password: "<YOUR_PASSWORD>"
     # ws-path: "/" # 如果不为空则开启 websocket 传输层
     # grpc-service-name: "GunService" # 如果不为空则开启 grpc 传输层
     # 下面两项如果填写则开启 tls（需要同时填写）
@@ -2019,7 +2017,7 @@ listeners:
     # 如果填写reality-config则开启reality（注意不可与certificate和private-key同时填写）
     # reality-config:
     #   dest: test.com:443
-    #   private-key: jNXHt1yRo0vDuchQlIP6Z0ZvjT3KtzVI-T4E7RoLJS0 # 可由 mihomo generate reality-keypair 命令生成
+    #   private-key: "<YOUR_REALITY_PRIVATE_KEY>" # 可由 mihomo generate reality-keypair 命令生成
     #   short-id:
     #     - 0123456789abcdef
     #   server-names:
@@ -2125,7 +2123,7 @@ listeners:
     # proxy: proxy # 如果不为空则直接将该入站流量交由指定 proxy 处理 (当 proxy 不为空时，这里的 proxy 名称必须合法，否则会出错)
     users:
       - username: 1
-        password: 9d0cb9d0-964f-4ef6-897d-6c6b3ccf9e68
+        password: "<YOUR_PASSWORD>"
     certificate: ./server.crt # 证书 PEM 格式，或者 证书的路径
     private-key: ./server.key # 证书对应的私钥 PEM 格式，或者私钥路径
     network: ["tcp", "udp"] # http2+http3
