@@ -11,8 +11,9 @@ templates/spider_lb.template.yaml   配置正文 + 占位符 + 生成标记
 templates/spider_lb.profiles.json   每份产物的差异值 + 在线订阅表
             │
             ▼  render_profile.py
-profiles/default.generated.yaml             生成物，头部有修订日期与生成指纹
-profiles/spider_lb_ch.generated.yaml          生成物
+~/Desktop/mihomo-profiles/default.generated.yaml        生成物，头部有修订日期与生成指纹
+~/Desktop/mihomo-profiles/spider_lb_ch.generated.yaml   生成物
+（没有 Desktop 目录时回退 ~/mihomo-profiles）
             │
             ▼  在 GUI 里重新应用 profile
 Clash Verge 的 profiles/<uid>.yaml → clash-verge.yaml → 内核实际加载
@@ -35,27 +36,35 @@ mihomo_provider.py         上述脚本共用的 API、路径与运行时定位
 | --- | --- | --- |
 | `templates/spider_lb.template.yaml` | 配置正文，含 `{{...}}` 占位符与生成标记 | 改这里 |
 | `templates/spider_lb.profiles.json` | `defaults` + 每份产物的订阅、端口、策略 | 改这里 |
-| `profiles/default.generated.yaml`、`spider_lb_ch.generated.yaml` | 生成物，头部有修订日期与 `# 生成指纹:sha256:...` | 不要手改，会被覆盖或触发 `--force` 要求 |
+| `<输出目录>/default.generated.yaml`、`spider_lb_ch.generated.yaml` | 生成物，头部有修订日期与 `# 生成指纹:sha256:...`；`<输出目录>` 默认是 `~/Desktop/mihomo-profiles`，无桌面目录时是 `~/mihomo-profiles` | 不要手改，会被覆盖或触发 `--force` 要求 |
 | `render_profile.py` | 渲染、指纹校验、可选跑 `mihomo -t` | 工具本身 |
 
 生成物头部由脚本写入：修订日期、用途说明、profile 描述、生成来源（脚本路径与 `profiles.json` 里的 `template`）、正文指纹。指纹是**正文的 SHA256**，用来判断产物是否被手改过；生成来源也从 `template` 推导，换模板后不会继续写旧文件名。
 
-## 产物命名与忽略规则
+## 产物命名与输出位置
 
-产物文件名带 `.generated` 标记（`profiles/<name>.generated.yaml`），仓库用一条规则忽略它们：
+默认输出目录是 `~/Desktop/mihomo-profiles`；`~/Desktop` 不存在时回退到 `~/mihomo-profiles`。需要固定到别处时，在 `profiles.json` 写 `outputDir`：
+
+- `"outputDir": "~/mihomo-profiles"`：家目录下的子目录
+- `"outputDir": "D:/mihomo-profiles"`：绝对路径
+- `"outputDir": "../profiles"`：相对 `templates/`，也就是仓库根下的 `profiles/`
+
+已有产物不会自动搬移：旧版本放在仓库 `profiles/` 的文件需要手动移到新目录，或用 `outputDir` 指回旧目录。
+
+产物文件名建议带 `.generated` 标记（`<输出目录>/<name>.generated.yaml`）。默认输出在仓库外，不依赖忽略规则；如果 `outputDir` 指回仓库，`.gitignore` 里的 `*.generated.*` 仍会忽略它们：
 
 ```gitignore
 # 脚本生成的配置产物(头部带生成指纹),由 render_profile.py 从 templates/ 重新渲染,不入库
 *.generated.*
 ```
 
-这样做的原因：
+生成物不入库的原因：
 
 - 生成物可从模板随时重建，入库只会制造合并冲突和“改了产物却没改模板”的漂移
 - 新增 profile（`profiles.json` 里加一项）自动被忽略，不用再改 `.gitignore`
 - 是否生成物有两个独立证据：文件名后缀 `.generated.yaml`，以及文件头 `# 生成指纹:sha256:...`
 
-判断某个文件是否真的由脚本生成，用 `python3 render_profile.py --check`：与模板一致退出 `0`，手改、过期或缺失退出 `3`。
+判断某个文件是否真的由脚本生成，用 `python3 render_profile.py --check`：与模板一致退出 `0`，手改、过期或缺失退出 `3`。`--list` 与 `--dry-run` 会先打印实际输出目录。
 
 ## 模板里的占位符
 
@@ -76,7 +85,6 @@ mihomo_provider.py         上述脚本共用的 API、路径与运行时定位
 ```json
 {
   "template": "spider_lb.template.yaml",
-  "outputDir": "../profiles",
   "defaults": {
     "description": "默认配置:入口 171xx,按连接轮询换出口",
     "subscriptions": {
@@ -103,9 +111,11 @@ mihomo_provider.py         上述脚本共用的 API、路径与运行时定位
 }
 ```
 
+省略 `outputDir` 时使用默认输出目录；要固定位置就加上该字段，写法见上一节。
+
 `defaults` 就是默认配置本身；`default.generated.yaml` 只写 `name`，其余全部继承。其它条目写哪个字段就覆盖哪个，没写的仍来自 `defaults`。覆盖是**顶层整字段替换**：`subscriptions`、`ports`、`countryOrder` 一旦重写就整块替换，不与 `defaults` 里的同名对象深合并。省略输出名时渲染 `profiles` 里的全部条目，不会只渲染第一条。
 
-位置参数只表示**输出名**，`--from` 只表示**内容来源**，两件事分开。名称解析顺序：已定义全名 → 去掉 `.generated.yaml` / `.yaml` 的短名 → 视为新输出名。新输出名默认补 `.generated.yaml`，内容取 `--from`，没给就用 `defaults`；显式写 `.yaml`（如 `probe.yaml`）则按原样落盘，不带 `.generated` 的文件不会被 `.gitignore` 忽略，脚本会提示。
+位置参数只表示**输出名**，`--from` 只表示**内容来源**，两件事分开。名称解析顺序：已定义全名 → 去掉 `.generated.yaml` / `.yaml` 的短名 → 视为新输出名。新输出名默认补 `.generated.yaml`，内容取 `--from`，没给就用 `defaults`；显式写 `.yaml`（如 `probe.yaml`）则按原样落盘。默认输出在仓库外，不会误提交；如果 `outputDir` 指回仓库，不带 `.generated` 的文件会收到提示。
 
 短名必须唯一：同时定义 `x.yaml` 与 `x.generated.yaml` 时，`x` 无法决定指向哪一份，脚本会直接报错，而不是静默选第一个。`--list` 也会跑与渲染相同的字段校验，字段名写错不会等到真正渲染才暴露。
 
@@ -119,9 +129,9 @@ python3 render_profile.py probe.yaml               # 显式 .yaml，按原样存
 
 | 字段 | 说明 | 适用模式 |
 | --- | --- | --- |
-| `template` / `outputDir` | 模板文件名与产物目录，相对 `templates/` 所在位置解析 | 全局 |
+| `template` / `outputDir` | 模板文件名与产物目录。`outputDir` 省略时用 `~/Desktop/mihomo-profiles`（无桌面目录回退 `~/mihomo-profiles`）；支持 `~`、绝对路径，或相对 `templates/` 的路径 | 全局 |
 | `defaults` | 基础配置：可放除 `name` 外的任意字段（含 `subscriptions`）；条目只写 `name` 即继承整份，写了哪个字段就整块覆盖哪个（数组与 `ports` 表整体替换，不深合并） | 全局（可选） |
-| `name` | 产物文件名**含 `.yaml` 后缀**，脚本原样落盘，也是位置参数的选择键（全名或短名）；按仓库惯例带 `.generated` 标记（如 `default.generated.yaml`），才能命中 `.gitignore` 的忽略规则 | 全局 |
+| `name` | 产物文件名**含 `.yaml` 后缀**，脚本原样落盘，也是位置参数的选择键（全名或短名）；建议带 `.generated` 标记（如 `default.generated.yaml`）；只有 `outputDir` 指回仓库时才依赖 `.gitignore` 的忽略规则 | 全局 |
 | `description` | 写进产物头部的用途说明 | 全局 |
 | `subscriptions` | provider 名 → `{ url, interval?, filter?, exclude-filter?, proxy?, path? }`；至少一项，增删订阅只改这里 | 全局 |
 | `subscriptionInterval` | 订阅更新周期（秒）默认值，供没写 `interval` 的订阅使用，适合放 `defaults` | 全局 |
@@ -248,7 +258,7 @@ proxy-providers:
 | 按默认配置另存 | `python3 render_profile.py crawler` | 生成 `crawler.generated.yaml`，内容同 default |
 | 指定内容来源另存 | `python3 render_profile.py crawler --from spider_lb_ch` | 用 ch 的内容，存成 `crawler.generated.yaml` |
 | 精确文件名 | `python3 render_profile.py probe.yaml` | 显式 `.yaml` 按原样落盘 |
-| 查看清单 | `python3 render_profile.py --list` | 已定义 profile + 磁盘上的自定义产物及其状态 |
+| 查看清单 | `python3 render_profile.py --list` | 输出目录 + 已定义 profile + 自定义产物及其状态 |
 | 遍历名字 | `python3 render_profile.py --list --names` | 一行一个，可直接喂给循环 |
 | 看要写哪些文件 | `python3 render_profile.py --dry-run` | 只列出文件与汇总，不落盘；要看内容用 `--print` |
 | 终端预览正文 | `python3 render_profile.py crawler --from spider_lb_ch --print` | 渲染结果打到 stdout，含文件头；不落盘 |
@@ -257,9 +267,10 @@ proxy-providers:
 | 覆盖手改 | `python3 render_profile.py --force` | 生成物被手改过时的显式入口 |
 | 渲染并测配置 | `python3 render_profile.py --test --mihomo-home <HomeDir>` | 渲染后调 `mihomo -t`；缺 `--mihomo-home` / `MIHOMO_HOME` 返回 `2` |
 
-`--list` 会扫描 `profiles/` 目录，识别依据是 `.generated.yaml` 后缀或文件头指纹，所以 `demo.yaml`、`mihomo.template.yaml` 这类手写文件不会混进来：
+`--list` 会先打印实际输出目录，再扫描该目录；识别依据是 `.generated.yaml` 后缀或文件头指纹，所以 `demo.yaml`、`mihomo.template.yaml` 这类手写文件不会混进来：
 
 ```text
+输出目录: /home/<user>/Desktop/mihomo-profiles
 已定义:
   default -> default.generated.yaml (最新)
   spider_lb_ch -> spider_lb_ch.generated.yaml (最新)
@@ -314,16 +325,16 @@ Windows 上 PowerShell 5.1 的 `>` 会把输出转成 UTF-16，需要时改用 `
 
 ## 与运行态的关系
 
-渲染只改仓库里的 `profiles/*.yaml`。内核实际加载的是 GUI 生成的那份配置，两者不会自动同步：
+渲染只改输出目录里的 `*.yaml`（默认在桌面）。内核实际加载的是 GUI 生成的那份配置，两者不会自动同步：
 
 ```text
-仓库 profiles/default.generated.yaml
+输出目录/default.generated.yaml
   → 在 Clash Verge 里重新应用/切换当前 profile
   → Verge 的 profiles/<uid>.yaml（导入的副本）
   → Verge 生成的 clash-verge.yaml（内核 -f 加载的就是它）
 ```
 
-本机实证（2026-11-12 的一次对比）：仓库 `profiles/default.generated.yaml`（当时文件名 `spider_lb.generated.yaml`）的 SHA256 是 `9AC12055…`，而 Verge 的 profile 副本是 `3B1AD67D…`（8 月版本），当时运行态里订阅 provider 的 `interval` 还是 `86400`、规则还是 `IN-PORT`，与仓库内容不一致。
+本机实证（2026-11-12 的一次对比）：当时的 `profiles/default.generated.yaml`（当时文件名 `spider_lb.generated.yaml`）的 SHA256 是 `9AC12055…`，而 Verge 的 profile 副本是 `3B1AD67D…`（8 月版本），当时运行态里订阅 provider 的 `interval` 还是 `86400`、规则还是 `IN-PORT`，与生成内容不一致。
 
 判断“当前跑的是哪一版”，不要看仓库文件时间，要看：
 

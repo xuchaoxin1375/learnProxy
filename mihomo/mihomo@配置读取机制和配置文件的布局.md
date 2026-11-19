@@ -476,7 +476,7 @@ rules:
 
 再比如，如果节点服务器 `hk.example.com` 解析失败，而你的 `proxy-server-nameserver` 没配好，那节点会超时。此时你看策略组、规则都正常，但真正问题在 DNS 解析节点域名这一步。
 
-还有一个更前置的坑：如果主配置是脚本生成的（本仓库用 `render_profile.py` 从模板渲染 `profiles/*.yaml`），那改了模板却没重新渲染、或者渲染了却没在 GUI 重新应用，运行态同样不会变。生成链路、指纹校验与验收步骤见 [mihomo@配置模板与生成物@render-profile渲染与校验](./mihomo@配置模板与生成物@render-profile渲染与校验.md)。
+还有一个更前置的坑：如果主配置是脚本生成的（本仓库用 `render_profile.py` 从模板渲染输出目录下的 `*.yaml`，默认在桌面），那改了模板却没重新渲染、或者渲染了却没在 GUI 重新应用，运行态同样不会变。生成链路、指纹校验与验收步骤见 [mihomo@配置模板与生成物@render-profile渲染与校验](./mihomo@配置模板与生成物@render-profile渲染与校验.md)。
 
 ## 一个具体案例：为什么 9090 访问不到
 

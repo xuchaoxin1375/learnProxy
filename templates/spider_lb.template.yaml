@@ -69,7 +69,7 @@ proxy-providers:
   {{PROXY_PROVIDERS}}
 
   # 本地节点文件示例（默认不启用）：
-  # 把节点文件放到 profiles/ 下，并在 mihomo 工作目录创建指向 profiles 的符号链接或 Junction（如 myprofiles），
+  # 把节点文件放到本地未入库目录（例如仓库根的 profiles/，需要时新建），并在 mihomo 工作目录创建指向该目录的符号链接或 Junction（如 myprofiles），
   # 再按下面的写法启用。file 类型不做下载，改动本地文件即重载，interval 对它不生效。
   # 自建节点文件包含真实凭据时不要提交到公开仓库（.gitignore 已忽略 profiles/s4.yaml、s6.yaml、xray_nodes）。
   # s4:

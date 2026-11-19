@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -57,6 +59,61 @@ class NamingTests(unittest.TestCase):
         entries = [{"name": "x.generated.yaml"}, {"name": "x.generated.yaml"}]
         with self.assertRaises(rp.ProfileError):
             rp.profile_keys(entries)
+
+
+class OutputDirTests(unittest.TestCase):
+    def test_default_uses_desktop_when_present(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            (home / "Desktop").mkdir()
+            expected = home / "Desktop" / "mihomo-profiles"
+            self.assertEqual(
+                rp.resolve_output_dir("", home / "repo" / "templates", home).resolve(),
+                expected.resolve(),
+            )
+
+    def test_default_falls_back_to_home_without_desktop(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            expected = home / "mihomo-profiles"
+            self.assertEqual(
+                rp.resolve_output_dir("", home / "repo" / "templates", home).resolve(),
+                expected.resolve(),
+            )
+
+    def test_expands_tilde(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            expected = home / "custom" / "profiles"
+            self.assertEqual(
+                rp.resolve_output_dir("~/custom/profiles", home / "templates", home).resolve(),
+                expected.resolve(),
+            )
+
+    def test_relative_path_stays_under_template_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            template_dir = home / "repo" / "templates"
+            expected = home / "repo" / "profiles"
+            self.assertEqual(
+                rp.resolve_output_dir("../profiles", template_dir, home).resolve(),
+                expected.resolve(),
+            )
+
+    def test_absolute_path_is_kept(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            target = home / "absolute"
+            self.assertEqual(
+                rp.resolve_output_dir(os.fspath(target), home / "templates", home).resolve(),
+                target.resolve(),
+            )
+
+    def test_path_is_inside(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.assertTrue(rp.path_is_inside(root / "repo" / "profiles", root / "repo"))
+            self.assertFalse(rp.path_is_inside(root / "repo", root / "repo" / "profiles"))
 
 
 class TemplateTests(unittest.TestCase):

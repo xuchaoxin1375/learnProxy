@@ -11,7 +11,7 @@
 | 分流规则 | `rule-providers.<name>` | `interval`、`proxy`、`path` | 四个规则集都是 `interval: 86400` + `proxy: PROXY`，缓存到 `./ruleset/*.yaml` |
 | Geo 数据 | 全局 `geo-auto-update` / `geo-update-interval` | 默认关闭 | 文件里没有设置，即不自动更新 |
 
-这些值不直接写在 `profiles/*.yaml` 里：产物由 `templates/spider_lb.template.yaml` 与 `templates/spider_lb.profiles.json` 渲染而来，改订阅节奏要改 `subscriptions[].interval`（或作为默认值的 `subscriptionInterval`），手改产物会被校验发现。渲染、指纹与验收见 [mihomo@配置模板与生成物@render-profile渲染与校验](./mihomo@配置模板与生成物@render-profile渲染与校验.md)。
+这些值不直接写在生成物 `*.yaml` 里：产物由 `templates/spider_lb.template.yaml` 与 `templates/spider_lb.profiles.json` 渲染而来，改订阅节奏要改 `subscriptions[].interval`（或作为默认值的 `subscriptionInterval`），手改产物会被校验发现。渲染、指纹与验收见 [mihomo@配置模板与生成物@render-profile渲染与校验](./mihomo@配置模板与生成物@render-profile渲染与校验.md)。
 
 `interval` 的官方定义只有一句“更新 provider 的时间，单位为秒”，真正的启动判定、到点触发和失败重试由内核的 fetcher 实现。([虚空终端](https://wiki.metacubex.one/config/proxy-providers/))
 
@@ -221,7 +221,7 @@ Invoke-WebRequest -Method Put 'http://127.0.0.1:9097/providers/proxies/online-su
 
 ## 本机实测记录（2026-11-12，Windows + Clash Verge + mihomo v1.19.32）
 
-运行时工作目录为 mihomo 的 `<HomeDir>`，`myprofiles` 是指向本仓库 `profiles/` 的 Junction。仓库里的 `profiles/*.yaml` 是生成物，Verge 用的是它自己的副本，两者不会自动同步：当天实测仓库产物与 Verge 副本 SHA256 不同，运行态仍是旧版配置（`interval: 86400`、`IN-PORT` 规则）。
+运行时工作目录为 mihomo 的 `<HomeDir>`，`myprofiles` 是指向生成物目录的 Junction（本机当时指向仓库 `profiles/`）。生成物目录里的 `*.yaml` 与 Verge 用的副本不会自动同步：当天实测两者 SHA256 不同，运行态仍是旧版配置（`interval: 86400`、`IN-PORT` 规则）。
 
 | 观测项 | 实测值 |
 | --- | --- |
@@ -235,7 +235,7 @@ Invoke-WebRequest -Method Put 'http://127.0.0.1:9097/providers/proxies/online-su
 | 修改本地节点文件 mtime | 3 秒内 `updatedAt` 跟进到新 mtime，验证 `fswatch` 自动重载 |
 | 规则集 | `direct_domain` 110189 条、`cn_ip` 9647 条、`private_domain` 132 条、`lan_ip` 28 条，均于当天 `8:32` 更新 |
 | 更新链路 | `/connections` 捕获 `process=mihomo`，`chains` 为节点 ← `美国-LB` ← `PROXY`，`rule=Match` |
-| 生成物与运行态 | 仓库产物改了不会自动生效，需在 GUI 重新应用；判断“当前跑哪一版”看 `clash-verge.yaml` 的 mtime 与其特征值 |
+| 生成物与运行态 | 生成物改了不会自动生效，需在 GUI 重新应用；判断“当前跑哪一版”看 `clash-verge.yaml` 的 mtime 与其特征值 |
 
 ## 常见误解
 
@@ -244,7 +244,7 @@ Invoke-WebRequest -Method Put 'http://127.0.0.1:9097/providers/proxies/online-su
 | 不写 `proxy` 就是直连 | 本机实测经规则 `MATCH` 走了 `PROXY`；要确定就显式写 |
 | 文件 mtime 没变就是没更新 | 内容 hash 未变时只刷新 `updatedAt`，文件可能不重写 |
 | 改完 yaml 立刻生效 | GUI 客户端（如 Clash Verge）读的是它生成的运行时配置，需重新应用 profile |
-| 改 `profiles/*.yaml` 就能生效 | 那是模板生成物，要先改模板与 `profiles.json` 再渲染；手改会被校验发现并要求 `--force` |
+| 改生成物 `*.yaml` 就能生效 | 那是模板生成物，要先改模板与 `profiles.json` 再渲染；手改会被校验发现并要求 `--force` |
 | 缓存文件可以随时拷走备份 | 写入不是原子的（先截断再写），更新进行中拷可能拿到半截文件 |
 | 缓存文件一定在 `proxy_providers/` | 默认位置是 `proxies/<url 的 md5>`，`proxy_providers/` 可能只是历史残留 |
 | provider 的 `filter` 能去掉信息节点 | 本仓库是在代理组上用 `exclude-filter` 过滤，provider 池里仍含信息节点 |

@@ -2,10 +2,11 @@
 """从模板 + profiles.json 渲染 mihomo 配置。
 
 用法（Linux/macOS）: python3 render_profile.py [选项]
-用法（Windows）   : python proxy\\render_profile.py [选项]
+用法（Windows）   : python render_profile.py [选项]
 
 职责：
 - 从 templates/<template> 与 profiles.json 的 defaults/profiles 渲染产物
+- 默认输出到 ~/Desktop/mihomo-profiles；没有 Desktop 目录时回退到 ~/mihomo-profiles
 - 每个产物头部写修订日期、用途、描述、来源与正文 SHA256 指纹
 - 用指纹区分“最新 / 未生成 / 被手改 / 需重渲染”，手改产物默认拒绝覆盖
 - 支持 `--check`、`--print`、`--list`、`--dry-run`、`--test`，详见 `--help`
@@ -41,6 +42,7 @@ from mihomo_provider import (
 BASE_DIR = Path(__file__).resolve().parent
 TEMPLATE_DIR = BASE_DIR / "templates"
 MANIFEST_PATH = TEMPLATE_DIR / "spider_lb.profiles.json"
+DEFAULT_OUTPUT_DIR_NAME = "mihomo-profiles"
 
 STRATEGY_NAMES = ("round-robin", "consistent-hashing", "sticky-sessions")
 REGION_PORT_FIELDS = {"all": "portAll", "eu": "portEu"}
@@ -567,10 +569,14 @@ def run_mihomo_test(paths: list[Path], home_dir: str) -> int:
 def build_parser() -> ArgumentParser:
     parser = ArgumentParser(
         prog="render_profile.py",
-        description="从模板渲染 mihomo 爬虫配置",
+        description=(
+            "从模板渲染 mihomo 爬虫配置；默认输出到 ~/Desktop/mihomo-profiles，"
+            "没有 Desktop 目录时回退到 ~/mihomo-profiles"
+        ),
         epilog=(
             "名称解析: 精确文件名 > 去掉 .generated.yaml/.yaml 的短名 > 视为新输出名。\n"
             "新输出名默认补 .generated.yaml，内容取 --from，未给则用 defaults。\n"
+            "输出目录可用 profiles.json 的 outputDir 覆盖（支持 ~、绝对路径或相对 templates/ 的路径）。\n"
             "退出码: 0 成功 / 1 运行或配置解析失败 / 2 用法错误 / 3 产物有差异或需要 --force\n"
             "Windows 用 python 代替 python3。"
         ),
@@ -594,7 +600,7 @@ def build_parser() -> ArgumentParser:
     parser.add_argument(
         "--check",
         action="store_true",
-        help="只校验是否同步，有差异或产物被手改返回 3",
+        help="只校验输出目录中的产物是否同步，有差异或产物被手改返回 3",
     )
     parser.add_argument(
         "--print",
@@ -606,7 +612,7 @@ def build_parser() -> ArgumentParser:
         "--list",
         dest="list_profiles",
         action="store_true",
-        help="列出已定义 profile 与磁盘上的自定义产物及其状态，不写盘",
+        help="列出输出目录中已定义 profile 与自定义产物及其状态，不写盘",
     )
     parser.add_argument(
         "--names",
@@ -756,20 +762,48 @@ def select_outputs(
                 key: value for key, value in defaults.items() if not str(key).startswith("_")
             }
             content["name"] = output
-            if not output.endswith(".generated.yaml"):
-                print(
-                    f"提示: {output} 不带 .generated 标记，不会被 .gitignore 忽略，注意别误提交",
-                    file=sys.stderr,
-                )
         selected.append({"name": output, "entry": content, "defined": defined})
     return selected, defaults
 
 
-def output_directory(manifest: dict[str, Any]) -> Path:
-    raw = str(manifest.get("outputDir", "")).strip()
+def resolve_output_dir(
+    raw: str,
+    template_dir: Path = TEMPLATE_DIR,
+    home: Path | None = None,
+) -> Path:
+    """解析 outputDir。
+
+    空值：优先 ~/Desktop/mihomo-profiles，缺少 Desktop 目录时回退 ~/mihomo-profiles。
+    非空：展开 ~ 与环境变量；相对路径按 template_dir 解析，绝对路径保持原样。
+    """
+    home_dir = Path(home or Path.home()).expanduser()
+    raw = raw.strip()
     if not raw:
-        raise ManifestError("profiles.json 缺少 outputDir 字段")
-    return Path(os.path.abspath(os.path.join(TEMPLATE_DIR, raw)))
+        desktop = home_dir / "Desktop"
+        base = desktop if desktop.is_dir() else home_dir
+        return Path(os.path.abspath(base / DEFAULT_OUTPUT_DIR_NAME))
+
+    expanded = os.path.expandvars(raw)
+    if expanded == "~" or expanded.startswith(("~/", "~\\")):
+        expanded = os.path.join(str(home_dir), expanded[2:])
+    path = Path(expanded)
+    if not path.is_absolute():
+        path = template_dir / path
+    return Path(os.path.abspath(path))
+
+
+def output_directory(manifest: dict[str, Any]) -> Path:
+    raw_value = manifest.get("outputDir", "")
+    raw = "" if raw_value is None else str(raw_value)
+    return resolve_output_dir(raw, TEMPLATE_DIR)
+
+
+def path_is_inside(path: Path, parent: Path) -> bool:
+    try:
+        path.resolve().relative_to(parent.resolve())
+    except ValueError:
+        return False
+    return True
 
 
 def load_template(manifest: dict[str, Any]) -> tuple[str, str, list[str], list[int]]:
@@ -842,6 +876,7 @@ def show_inventory(manifest: dict[str, Any], names_only: bool = False) -> None:
             print(name)
         return
 
+    print(f"输出目录: {output_dir}")
     template, _, port_keys, reserved = load_template(manifest)
     print("已定义:")
     for entry in entries:
@@ -963,6 +998,16 @@ def main(argv: list[str] | None = None) -> int:
     try:
         output_dir = output_directory(manifest)
         template, template_name, port_keys, reserved = load_template(manifest)
+        if not args.print_preview:
+            print(f"[输出目录] {output_dir}")
+            if path_is_inside(output_dir, BASE_DIR):
+                for item in selected:
+                    name = str(item.get("name", ""))
+                    if not name.endswith(".generated.yaml"):
+                        print(
+                            f"提示: {name} 不带 .generated 标记，且输出目录在仓库内，注意别误提交",
+                            file=sys.stderr,
+                        )
         if not args.print_preview and not args.dry_run and not output_dir.is_dir():
             output_dir.mkdir(parents=True, exist_ok=True)
             print(f"[创建目录] {output_dir}")
@@ -1054,7 +1099,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.check:
         if stale:
             print(
-                f"检查结果: {len(stale)} 份需要重新渲染;手工改动过的先看 git diff 再决定是否 --force"
+                f"检查结果: {len(stale)} 份需要重新渲染;手工改动过的先对比内容再决定是否 --force"
             )
             return EXIT_STATE
         print("检查结果: 全部与模板一致")
