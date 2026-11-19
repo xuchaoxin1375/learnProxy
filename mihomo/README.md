@@ -87,12 +87,12 @@ mihomo（Clash.Meta 内核）的学习与运维笔记，覆盖从“订阅怎么
 
 | 脚本 | 职责 | 读写行为 |
 | --- | --- | --- |
-| [`render_profile.py`](../render_profile.py) | 从 `templates/` 渲染 profile、指纹校验、位置参数/`--from` 另存、`--list` 清单、可选跑 `mihomo -t` | 默认写 `~/Desktop/mihomo-profiles/*.generated.yaml`；无桌面目录时回退 `~/mihomo-profiles` |
+| [`render_profile.py`](../render_profile.py) | 从 `templates/` 渲染 profile、指纹校验、位置参数/`--from` 另存、`--manifest` 本地清单、`--list` 清单、可选跑 `mihomo -t` | 默认写 `~/Desktop/mihomo-profiles/*.generated.yaml`；无桌面目录时回退 `~/mihomo-profiles` |
 | [`check_provider_status.py`](../check_provider_status.py) | 竖排明细（新鲜度、过期标记、缓存路径），`--summary` 出汇总表 | 只读，仅 `GET` 与本地文件检查 |
 | [`trigger_provider_update.py`](../trigger_provider_update.py) | 手动触发订阅或规则集更新、单 provider 测速 | 写操作，会真实下载 |
 | [`mihomo_provider.py`](../mihomo_provider.py) | 上面两个 provider 脚本共用的 API、路径与运行时定位 | 只读工具模块 |
 
-模板与值文件在 `templates/`（`spider_lb.template.yaml`、`spider_lb.profiles.json`），产物默认在 `~/Desktop/mihomo-profiles`（无桌面目录时回退 `~/mihomo-profiles`），可用 `profiles.json` 的 `outputDir` 覆盖。自建节点文件不随仓库提供；需要本地使用时把节点 YAML 放进未入库目录（例如仓库根的 `profiles/`；相关文件名已在 `.gitignore` 中），模板里只保留注释示例。
+模板与值文件在 `templates/`（`spider_lb.template.yaml`、`spider_lb.profiles.json`），产物默认在 `~/Desktop/mihomo-profiles`（无桌面目录时回退 `~/mihomo-profiles`），可用清单里的 `outputDir` 覆盖。真实订阅不要写进公开的 `spider_lb.profiles.json`：复制成 `templates/spider_lb.profiles.local.json` 再改，脚本会优先读取；也可以用 `--manifest` 指定其他位置。自建节点文件不随仓库提供；需要本地使用时把节点 YAML 放进未入库目录（例如仓库根的 `profiles/`；相关文件名已在 `.gitignore` 中），模板里只保留注释示例。
 
 三个脚本只依赖 Python 3.10+ 标准库，Windows / Linux / macOS 通用；文档命令以 Linux/macOS 的 `python3` 为例，Windows 把 `python3` 换成 `python`。
 
@@ -100,6 +100,6 @@ mihomo（Clash.Meta 内核）的学习与运维笔记，覆盖从“订阅怎么
 
 ## 约定
 
-- 带 `.generated.yaml` 后缀的配置是脚本产物，不要手改；改模板与 `profiles.json` 后重新渲染。默认输出在仓库外，若把 `outputDir` 指回仓库，`.gitignore` 仍会忽略这类文件
+- 带 `.generated.yaml` 后缀的配置是脚本产物，不要手改；改模板与清单后重新渲染。默认输出在仓库外，若把 `outputDir` 指回仓库，`.gitignore` 仍会忽略这类文件
 - 文档里的路径是示例，`-d`/`-f` 以本机实际工作目录为准
 - 命令示例中的 `<secret>`、`/path/to/...` 是占位，不要直接照抄

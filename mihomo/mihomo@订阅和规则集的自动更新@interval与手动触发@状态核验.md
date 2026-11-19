@@ -4,14 +4,14 @@
 
 **订阅节点、规则集、Geo 数据是三条独立的更新链路，各自的更新节奏写在各自的 provider 里；mihomo 没有“全局关闭自动更新”的开关。**
 
-| 更新对象 | 配置位置 | 控制字段 | 本仓库当前取值（由 `templates/spider_lb.profiles.json` 渲染，产物不入库） |
+| 更新对象 | 配置位置 | 控制字段 | 本仓库当前取值（由清单渲染，产物不入库） |
 | --- | --- | --- | --- |
 | 订阅节点 | `proxy-providers.<name>`（`type: http`） | `interval`、`proxy`、`path`、`size-limit`、`health-check` | `online-sub1` 用 `interval: 43200`（约每天 2 次）、显式 `proxy: PROXY`、不写 `path` |
 | 订阅节点（本地） | `proxy-providers.<name>`（`type: file`） | 无更新周期，靠文件监听 | 本仓库默认不启用；接入自建节点时只合并 `health-check`，没有 `interval`，读 `./myprofiles/*.yaml` |
 | 分流规则 | `rule-providers.<name>` | `interval`、`proxy`、`path` | 四个规则集都是 `interval: 86400` + `proxy: PROXY`，缓存到 `./ruleset/*.yaml` |
 | Geo 数据 | 全局 `geo-auto-update` / `geo-update-interval` | 默认关闭 | 文件里没有设置，即不自动更新 |
 
-这些值不直接写在生成物 `*.yaml` 里：产物由 `templates/spider_lb.template.yaml` 与 `templates/spider_lb.profiles.json` 渲染而来，改订阅节奏要改 `subscriptions[].interval`（或作为默认值的 `subscriptionInterval`），手改产物会被校验发现。渲染、指纹与验收见 [mihomo@配置模板与生成物@render-profile渲染与校验](./mihomo@配置模板与生成物@render-profile渲染与校验.md)。
+这些值不直接写在生成物 `*.yaml` 里：产物由 `templates/spider_lb.template.yaml` 与清单（公开的 `spider_lb.profiles.json` 或本地私有清单）渲染而来，改订阅节奏要改清单里的 `subscriptions[].interval`（或作为默认值的 `subscriptionInterval`），手改产物会被校验发现。渲染、指纹与验收见 [mihomo@配置模板与生成物@render-profile渲染与校验](./mihomo@配置模板与生成物@render-profile渲染与校验.md)。
 
 `interval` 的官方定义只有一句“更新 provider 的时间，单位为秒”，真正的启动判定、到点触发和失败重试由内核的 fetcher 实现。([虚空终端](https://wiki.metacubex.one/config/proxy-providers/))
 
@@ -34,7 +34,7 @@
 
 ## 想达到什么效果，改哪里
 
-本仓库的订阅节奏由 `templates/spider_lb.profiles.json` 的 `subscriptions[].interval` 渲染进产物（没写时用 `subscriptionInterval` 默认值），改完要重新渲染并重新应用，具体见 [mihomo@配置模板与生成物@render-profile渲染与校验](./mihomo@配置模板与生成物@render-profile渲染与校验.md)。下表适用于任意 mihomo 配置。
+本仓库的订阅节奏由清单的 `subscriptions[].interval` 渲染进产物（没写时用 `subscriptionInterval` 默认值），改完要重新渲染并重新应用，具体见 [mihomo@配置模板与生成物@render-profile渲染与校验](./mihomo@配置模板与生成物@render-profile渲染与校验.md)。下表适用于任意 mihomo 配置。
 
 | 目标 | 做法 | 代价与注意 |
 | --- | --- | --- |
@@ -244,7 +244,7 @@ Invoke-WebRequest -Method Put 'http://127.0.0.1:9097/providers/proxies/online-su
 | 不写 `proxy` 就是直连 | 本机实测经规则 `MATCH` 走了 `PROXY`；要确定就显式写 |
 | 文件 mtime 没变就是没更新 | 内容 hash 未变时只刷新 `updatedAt`，文件可能不重写 |
 | 改完 yaml 立刻生效 | GUI 客户端（如 Clash Verge）读的是它生成的运行时配置，需重新应用 profile |
-| 改生成物 `*.yaml` 就能生效 | 那是模板生成物，要先改模板与 `profiles.json` 再渲染；手改会被校验发现并要求 `--force` |
+| 改生成物 `*.yaml` 就能生效 | 那是模板生成物，要先改模板与清单再渲染；手改会被校验发现并要求 `--force` |
 | 缓存文件可以随时拷走备份 | 写入不是原子的（先截断再写），更新进行中拷可能拿到半截文件 |
 | 缓存文件一定在 `proxy_providers/` | 默认位置是 `proxies/<url 的 md5>`，`proxy_providers/` 可能只是历史残留 |
 | provider 的 `filter` 能去掉信息节点 | 本仓库是在代理组上用 `exclude-filter` 过滤，provider 池里仍含信息节点 |
@@ -254,7 +254,7 @@ Invoke-WebRequest -Method Put 'http://127.0.0.1:9097/providers/proxies/online-su
 ## 验收清单
 
 - 每个 `http` provider 都有明确的 `interval`，并知道这个数值对应多久
-- 改订阅节奏走 `templates/spider_lb.profiles.json` 的 `subscriptions[].interval`（或默认值 `subscriptionInterval`），重新渲染后再在 GUI 重新应用
+- 改订阅节奏走清单的 `subscriptions[].interval`（或默认值 `subscriptionInterval`），重新渲染后再在 GUI 重新应用
 - 需要确定性链路的 provider 显式写了 `proxy`
 - 换过订阅 URL 的 provider 检查过缓存文件是否顶替（必要时显式 `path` 并清旧缓存）
 - 规则集有 `proxy`，且代理组在启动时可用，否则规则更新会静默失败

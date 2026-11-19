@@ -7,8 +7,9 @@
 本仓库的爬虫配置现在是这条链路：
 
 ```text
-templates/spider_lb.template.yaml   配置正文 + 占位符 + 生成标记
-templates/spider_lb.profiles.json   每份产物的差异值 + 在线订阅表
+templates/spider_lb.template.yaml          配置正文 + 占位符 + 生成标记
+templates/spider_lb.profiles.json          每份产物的差异值 + 在线订阅表（占位）
+templates/spider_lb.profiles.local.json    可选本地私有清单，存在时优先（不提交）
             │
             ▼  render_profile.py
 ~/Desktop/mihomo-profiles/default.generated.yaml        生成物，头部有修订日期与生成指纹
@@ -35,7 +36,8 @@ mihomo_provider.py         上述脚本共用的 API、路径与运行时定位
 | 路径 | 角色 | 能否手改 |
 | --- | --- | --- |
 | `templates/spider_lb.template.yaml` | 配置正文，含 `{{...}}` 占位符与生成标记 | 改这里 |
-| `templates/spider_lb.profiles.json` | `defaults` + 每份产物的订阅、端口、策略 | 改这里 |
+| `templates/spider_lb.profiles.json` | 公开的 `defaults` + 每份产物的订阅、端口、策略（订阅为占位） | 改结构或占位值 |
+| `templates/spider_lb.profiles.local.json` | 可选的本地私有清单，放真实订阅；已被 `.gitignore` 忽略 | 本地改这里，不提交 |
 | `<输出目录>/default.generated.yaml`、`spider_lb_ch.generated.yaml` | 生成物，头部有修订日期与 `# 生成指纹:sha256:...`；`<输出目录>` 默认是 `~/Desktop/mihomo-profiles`，无桌面目录时是 `~/mihomo-profiles` | 不要手改，会被覆盖或触发 `--force` 要求 |
 | `render_profile.py` | 渲染、指纹校验、可选跑 `mihomo -t` | 工具本身 |
 
@@ -65,6 +67,26 @@ mihomo_provider.py         上述脚本共用的 API、路径与运行时定位
 - 是否生成物有两个独立证据：文件名后缀 `.generated.yaml`，以及文件头 `# 生成指纹:sha256:...`
 
 判断某个文件是否真的由脚本生成，用 `python3 render_profile.py --check`：与模板一致退出 `0`，手改、过期或缺失退出 `3`。`--list` 与 `--dry-run` 会先打印实际输出目录。
+
+## 本地私有清单
+
+公开仓库里的 `spider_lb.profiles.json` 只放占位订阅。需要真实订阅时，复制一份本地清单再改：
+
+```bash
+cp templates/spider_lb.profiles.json templates/spider_lb.profiles.local.json
+# 编辑 templates/spider_lb.profiles.local.json 里的 subscriptions
+python3 render_profile.py --manifest templates/spider_lb.profiles.local.json
+```
+
+清单选择顺序：
+
+- `--manifest <文件>`：显式指定，优先于自动发现；相对路径按当前目录解析，支持 `~` 与环境变量。
+- `templates/spider_lb.profiles.local.json`：存在时自动使用，不需要额外参数。
+- `templates/spider_lb.profiles.json`：没有本地清单时的公开模板。
+
+使用非公开清单时，脚本会在 stderr 打印 `[清单] <路径>`，避免改了本地文件却以为还在用公开文件。`templates/*.local.json` 已被 `.gitignore` 忽略；不要用 `git add -f` 强行加入。
+
+`template` 字段仍然只允许写 `templates/` 下的文件名，`outputDir` 的相对路径也仍按 `templates/` 解析，与清单文件放在哪里无关。要完全放到仓库外，用绝对 `outputDir`。
 
 ## 模板里的占位符
 
@@ -111,7 +133,7 @@ mihomo_provider.py         上述脚本共用的 API、路径与运行时定位
 }
 ```
 
-省略 `outputDir` 时使用默认输出目录；要固定位置就加上该字段，写法见上一节。
+省略 `outputDir` 时使用默认输出目录；要固定位置就加上该字段，写法见上一节。这份文件只放占位值；真实订阅写到本地私有清单，见上一节。
 
 `defaults` 就是默认配置本身；`default.generated.yaml` 只写 `name`，其余全部继承。其它条目写哪个字段就覆盖哪个，没写的仍来自 `defaults`。覆盖是**顶层整字段替换**：`subscriptions`、`ports`、`countryOrder` 一旦重写就整块替换，不与 `defaults` 里的同名对象深合并。省略输出名时渲染 `profiles` 里的全部条目，不会只渲染第一条。
 
@@ -254,6 +276,7 @@ proxy-providers:
 | 目的 | 命令 | 说明 |
 | --- | --- | --- |
 | 渲染全部 | `python3 render_profile.py` | 内容未变则跳过，不产生无意义改动 |
+| 使用本地清单 | `python3 render_profile.py --manifest templates/spider_lb.profiles.local.json` | 显式指定数据文件；本地文件存在时也可省略 |
 | 只渲染一份 | `python3 render_profile.py default` | 短名即可，自动对应 `default.generated.yaml` |
 | 按默认配置另存 | `python3 render_profile.py crawler` | 生成 `crawler.generated.yaml`，内容同 default |
 | 指定内容来源另存 | `python3 render_profile.py crawler --from spider_lb_ch` | 用 ch 的内容，存成 `crawler.generated.yaml` |

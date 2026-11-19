@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import contextlib
+import io
+import json
 import os
 import sys
 import tempfile
@@ -114,6 +117,85 @@ class OutputDirTests(unittest.TestCase):
             root = Path(tmp)
             self.assertTrue(rp.path_is_inside(root / "repo" / "profiles", root / "repo"))
             self.assertFalse(rp.path_is_inside(root / "repo", root / "repo" / "profiles"))
+
+
+class ManifestTests(unittest.TestCase):
+    def test_explicit_manifest_wins_over_local(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            template_dir = root / "templates"
+            template_dir.mkdir()
+            (template_dir / "spider_lb.profiles.json").write_text("{}", encoding="utf-8")
+            (template_dir / "spider_lb.profiles.local.json").write_text("{}", encoding="utf-8")
+            explicit = root / "private.json"
+            explicit.write_text("{}", encoding="utf-8")
+            self.assertEqual(
+                rp.resolve_manifest_path(os.fspath(explicit), template_dir).resolve(),
+                explicit.resolve(),
+            )
+
+    def test_local_manifest_is_preferred_when_present(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            template_dir = Path(tmp) / "templates"
+            template_dir.mkdir()
+            (template_dir / "spider_lb.profiles.json").write_text("{}", encoding="utf-8")
+            local = template_dir / "spider_lb.profiles.local.json"
+            local.write_text("{}", encoding="utf-8")
+            self.assertEqual(
+                rp.resolve_manifest_path("", template_dir).resolve(),
+                local.resolve(),
+            )
+
+    def test_base_manifest_is_used_when_local_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            template_dir = Path(tmp) / "templates"
+            template_dir.mkdir()
+            base = template_dir / "spider_lb.profiles.json"
+            base.write_text("{}", encoding="utf-8")
+            self.assertEqual(
+                rp.resolve_manifest_path("", template_dir).resolve(),
+                base.resolve(),
+            )
+
+    def test_relative_manifest_uses_given_cwd(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            cwd = root / "work"
+            cwd.mkdir()
+            self.assertEqual(
+                rp.resolve_manifest_path("private.json", root / "templates", cwd).resolve(),
+                (cwd / "private.json").resolve(),
+            )
+
+    def test_load_manifest_reads_given_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "custom.json"
+            path.write_text('{"profiles": []}', encoding="utf-8")
+            self.assertEqual(rp.load_manifest(path), {"profiles": []})
+
+    def test_load_manifest_rejects_missing_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, self.assertRaises(rp.ManifestError):
+            rp.load_manifest(Path(tmp) / "missing.json")
+
+    def test_main_uses_explicit_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(__file__).resolve().parents[1] / "templates" / "spider_lb.profiles.json"
+            manifest = json.loads(source.read_text(encoding="utf-8"))
+            manifest["outputDir"] = tmp
+            path = Path(tmp) / "private.json"
+            path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with (
+                contextlib.redirect_stdout(stdout),
+                contextlib.redirect_stderr(stderr),
+            ):
+                code = rp.main(["--manifest", os.fspath(path), "--dry-run"])
+
+            self.assertEqual(code, 0)
+            self.assertIn(f"[清单] {path}", stderr.getvalue())
+            self.assertIn(f"[输出目录] {Path(tmp)}", stdout.getvalue())
 
 
 class TemplateTests(unittest.TestCase):

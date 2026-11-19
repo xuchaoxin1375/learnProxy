@@ -23,13 +23,22 @@ python3 check_provider_status.py --secret '<secret>' --summary
 python3 trigger_provider_update.py <provider> --dry-run
 ```
 
-`templates/spider_lb.profiles.json` 里的订阅地址是占位符，使用前替换成你自己的订阅。改了模板或 `profiles.json` 后重新渲染；默认生成到 `~/Desktop/mihomo-profiles`（没有 `Desktop` 目录时回退 `~/mihomo-profiles`），`--list` / `--dry-run` 会打印实际输出目录。生成物不会自动同步到 Clash Verge，仍需在 GUI 里重新应用当前 profile。
+`templates/spider_lb.profiles.json` 里的订阅地址是占位符。要填真实订阅，先复制一份本地清单再改，避免把真实地址写进跟踪文件：
+
+```bash
+cp templates/spider_lb.profiles.json templates/spider_lb.profiles.local.json
+# 编辑 templates/spider_lb.profiles.local.json 里的 subscriptions
+```
+
+`templates/spider_lb.profiles.local.json` 已被 `.gitignore` 忽略；脚本默认优先读取它，没有时回退到 `templates/spider_lb.profiles.json`。也可以 `--manifest /path/to/private.json` 指定任意位置的清单（相对路径按当前目录解析）。
+
+改了模板或清单后重新渲染；默认生成到 `~/Desktop/mihomo-profiles`（没有 `Desktop` 目录时回退 `~/mihomo-profiles`），`--list` / `--dry-run` 会打印实际输出目录。生成物不会自动同步到 Clash Verge，仍需在 GUI 里重新应用当前 profile。
 
 ## 脚本职责
 
 | 路径 | 职责 | 读写行为 |
 | --- | --- | --- |
-| `render_profile.py` | 从模板与 `profiles.json` 渲染 profile，指纹校验，`--list` / `--print` / `--check` / `--test` | 默认写 `~/Desktop/mihomo-profiles/*.generated.yaml`；无桌面目录时回退 `~/mihomo-profiles` |
+| `render_profile.py` | 从模板与 `profiles.json`（或 `--manifest` 指定的本地清单）渲染 profile，指纹校验，`--manifest` / `--list` / `--print` / `--check` / `--test` | 默认写 `~/Desktop/mihomo-profiles/*.generated.yaml`；无桌面目录时回退 `~/mihomo-profiles` |
 | `check_provider_status.py` | 检查 proxy-provider / rule-provider 新鲜度、订阅用量、缓存路径 | 只读，仅 `GET` 与本地文件检查 |
 | `trigger_provider_update.py` | 手动触发订阅或规则集更新、单 provider 测速 | 写操作，会真实下载并消耗流量 |
 | `mihomo_provider.py` | 上面脚本共用的 API、运行时定位、缓存路径、输出格式化 | 工具模块，不单独运行 |
@@ -64,14 +73,14 @@ python3 trigger_provider_update.py <provider> --dry-run
 ├─ ruff.toml                  Python 3.10+ 的 lint 配置
 ├─ templates/
 │  ├─ spider_lb.template.yaml 配置正文与占位符
-│  ├─ spider_lb.profiles.json 产物差异值与在线订阅
+│  ├─ spider_lb.profiles.json 产物差异值与在线订阅（占位）
 │  └─ profiles/               历史模板与官方示例
 ├─ tests/                     单元测试
 ├─ 自建代理节点/              自建节点搭建记录
 └─ mihomo/                    mihomo 学习与运维笔记
 ```
 
-脚本默认把生成物写到 `~/Desktop/mihomo-profiles`，没有 `Desktop` 目录时回退 `~/mihomo-profiles`；`--list` / `--dry-run` 会打印实际输出目录。需要固定到别处时，在 `templates/spider_lb.profiles.json` 写 `outputDir`（支持 `~`、绝对路径或相对 `templates/` 的路径）。旧产物不会自动搬移，需要时手动移动或用 `outputDir` 指回旧目录。`templates/profiles/` 里是历史模板与官方示例（如 `mihomo.template.yaml`、`proxy_full_template.yaml`），当前渲染链路只读 `templates/spider_lb.template.yaml`，改模板时不要改错文件。
+脚本默认把生成物写到 `~/Desktop/mihomo-profiles`，没有 `Desktop` 目录时回退 `~/mihomo-profiles`；`--list` / `--dry-run` 会打印实际输出目录。需要固定到别处时，在清单里写 `outputDir`（支持 `~`、绝对路径或相对 `templates/` 的路径）。旧产物不会自动搬移，需要时手动移动或用 `outputDir` 指回旧目录。`templates/spider_lb.profiles.local.json` 是本地私有清单，已被 `.gitignore` 忽略，不随仓库提供。`templates/profiles/` 里是历史模板与官方示例（如 `mihomo.template.yaml`、`proxy_full_template.yaml`），当前渲染链路只读 `templates/spider_lb.template.yaml`，改模板时不要改错文件。
 
 自建节点文件不随仓库提供。需要接回本地节点时，把节点 YAML 放到本地未入库目录（例如仓库根的 `profiles/`，需要时新建；相关文件名已在 `.gitignore` 中），再按 `templates/spider_lb.template.yaml` 里的注释示例启用本地 provider，最后在 GUI 里重新应用配置。模板与示例文件里的 IP、UUID、Reality 密钥与密码都只是占位示例。
 
@@ -91,7 +100,7 @@ python3 trigger_provider_update.py <provider> --dry-run
 
 ## 数据与安全
 
-- 本仓库按公开仓库组织：`templates/spider_lb.profiles.json` 只保留占位订阅地址，真实订阅、节点 IP、UUID、Reality 密钥和密码不要提交。
+- 本仓库按公开仓库组织：`templates/spider_lb.profiles.json` 只保留占位订阅地址；真实订阅写到本地清单（`templates/spider_lb.profiles.local.json` 或 `--manifest` 指定的文件），节点 IP、UUID、Reality 密钥和密码也不要提交。
 - 生成的配置含订阅地址与节点信息，默认在桌面；不要为了备份把它复制回仓库，也不要用 `git add -f` 强行加入被忽略的产物。
 - 如果曾把真实凭据提交到公开仓库，先轮换订阅地址和节点密钥；删除文件或清理历史不等于凭据已经安全。
 - 模板默认 `external-controller: 127.0.0.1:9097` 与 `secret: '1'`，只适合本机使用。需要局域网面板时，同时改监听地址和 secret，不要只开 `allow-lan`。

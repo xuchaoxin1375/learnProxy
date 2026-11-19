@@ -5,7 +5,8 @@
 用法（Windows）   : python render_profile.py [选项]
 
 职责：
-- 从 templates/<template> 与 profiles.json 的 defaults/profiles 渲染产物
+- 从 templates/<template> 与 profiles.json（或本地私有清单）的 defaults/profiles 渲染产物
+- 清单选择：--manifest > templates/spider_lb.profiles.local.json > templates/spider_lb.profiles.json
 - 默认输出到 ~/Desktop/mihomo-profiles；没有 Desktop 目录时回退到 ~/mihomo-profiles
 - 每个产物头部写修订日期、用途、描述、来源与正文 SHA256 指纹
 - 用指纹区分“最新 / 未生成 / 被手改 / 需重渲染”，手改产物默认拒绝覆盖
@@ -42,6 +43,7 @@ from mihomo_provider import (
 BASE_DIR = Path(__file__).resolve().parent
 TEMPLATE_DIR = BASE_DIR / "templates"
 MANIFEST_PATH = TEMPLATE_DIR / "spider_lb.profiles.json"
+LOCAL_MANIFEST_PATH = TEMPLATE_DIR / "spider_lb.profiles.local.json"
 DEFAULT_OUTPUT_DIR_NAME = "mihomo-profiles"
 
 STRATEGY_NAMES = ("round-robin", "consistent-hashing", "sticky-sessions")
@@ -576,6 +578,8 @@ def build_parser() -> ArgumentParser:
         epilog=(
             "名称解析: 精确文件名 > 去掉 .generated.yaml/.yaml 的短名 > 视为新输出名。\n"
             "新输出名默认补 .generated.yaml，内容取 --from，未给则用 defaults。\n"
+            "清单选择: --manifest > templates/spider_lb.profiles.local.json（存在时）> "
+            "templates/spider_lb.profiles.json。\n"
             "输出目录可用 profiles.json 的 outputDir 覆盖（支持 ~、绝对路径或相对 templates/ 的路径）。\n"
             "退出码: 0 成功 / 1 运行或配置解析失败 / 2 用法错误 / 3 产物有差异或需要 --force\n"
             "Windows 用 python 代替 python3。"
@@ -588,6 +592,15 @@ def build_parser() -> ArgumentParser:
         help=(
             "要生成的输出名，可写多个或用逗号分隔；省略表示渲染 profiles 里的全部。"
             "已定义的全名/短名按对应条目生成，其它名称视为新输出名"
+        ),
+    )
+    parser.add_argument(
+        "--manifest",
+        default="",
+        metavar="文件",
+        help=(
+            "profiles 数据文件；省略时优先 templates/spider_lb.profiles.local.json（存在时），"
+            "否则用 templates/spider_lb.profiles.json。相对路径按当前目录解析"
         ),
     )
     parser.add_argument(
@@ -642,19 +655,45 @@ def build_parser() -> ArgumentParser:
     return parser
 
 
-def load_manifest() -> dict[str, Any]:
-    if not MANIFEST_PATH.is_file():
-        raise ManifestError(f"找不到 profiles 数据文件: {MANIFEST_PATH}")
+def resolve_manifest_path(
+    value: str = "",
+    template_dir: Path = TEMPLATE_DIR,
+    cwd: Path | None = None,
+) -> Path:
+    """选择 profiles 数据文件。
+
+    显式 --manifest 优先（相对路径按当前目录解析）；否则优先同目录的
+    spider_lb.profiles.local.json，最后回退 spider_lb.profiles.json。
+    显式路径不在这里检查存在性，由 load_manifest 统一报错。
+    """
+    raw = value.strip()
+    if raw:
+        expanded = os.path.expanduser(os.path.expandvars(raw))
+        path = Path(expanded)
+        if not path.is_absolute():
+            path = (cwd or Path.cwd()) / path
+        return Path(os.path.abspath(path))
+
+    local = template_dir / LOCAL_MANIFEST_PATH.name
+    if local.is_file():
+        return local
+    return template_dir / MANIFEST_PATH.name
+
+
+def load_manifest(path: Path | None = None) -> dict[str, Any]:
+    manifest_path = path or MANIFEST_PATH
+    if not manifest_path.is_file():
+        raise ManifestError(f"找不到 profiles 数据文件: {manifest_path}")
     try:
-        raw = read_text(MANIFEST_PATH)
+        raw = read_text(manifest_path)
     except (OSError, UnicodeError) as exc:
-        raise ManifestError(f"读取 profiles.json 失败: {exc}") from exc
+        raise ManifestError(f"读取 profiles 数据文件失败 ({manifest_path}): {exc}") from exc
     try:
         manifest = json.loads(raw)
     except ValueError as exc:
-        raise ManifestError(f"profiles.json 不是合法 JSON: {exc}") from exc
+        raise ManifestError(f"{manifest_path} 不是合法 JSON: {exc}") from exc
     if not isinstance(manifest, dict):
-        raise ManifestError("profiles.json 顶层必须是对象")
+        raise ManifestError(f"{manifest_path} 顶层必须是对象")
     return manifest
 
 
@@ -967,10 +1006,13 @@ def main(argv: list[str] | None = None) -> int:
             return EXIT_USAGE
 
     try:
-        manifest = load_manifest()
+        manifest_path = resolve_manifest_path(args.manifest)
+        manifest = load_manifest(manifest_path)
     except ManifestError as exc:
         print(f"错误: {exc}", file=sys.stderr)
         return EXIT_ERROR
+    if manifest_path != MANIFEST_PATH:
+        print(f"[清单] {manifest_path}", file=sys.stderr)
 
     if args.list_profiles:
         try:
