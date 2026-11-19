@@ -10,7 +10,7 @@
 - 默认输出到 ~/Desktop/mihomo-profiles；没有 Desktop 目录时回退到 ~/mihomo-profiles
 - 每个产物头部写修订日期、用途、描述、来源与正文 SHA256 指纹
 - 用指纹区分“最新 / 未生成 / 被手改 / 需重渲染”，手改产物默认拒绝覆盖
-- 支持 `--check`、`--print`、`--list`、`--dry-run`、`--test`，详见 `--help`
+- 支持 `--check`（可配 `--allow-missing`）、`--print`、`--list`、`--dry-run`、`--test`，详见 `--help`
 
 位置参数只表示输出名，`--from` 只表示内容来源；产物 name 直接写文件名（带 .yaml），
 也是位置参数的选择键（全名或去掉后缀的短名）。模板里的 {{PROXY_PROVIDERS}} /
@@ -581,7 +581,8 @@ def build_parser() -> ArgumentParser:
             "清单选择: --manifest > templates/spider_lb.profiles.local.json（存在时）> "
             "templates/spider_lb.profiles.json。\n"
             "输出目录可用 profiles.json 的 outputDir 覆盖（支持 ~、绝对路径或相对 templates/ 的路径）。\n"
-            "退出码: 0 成功 / 1 运行或配置解析失败 / 2 用法错误 / 3 产物有差异或需要 --force\n"
+            "退出码: 0 成功 / 1 运行或配置解析失败 / 2 用法错误 / "
+            "3 产物未生成、有差异或需要 --force\n"
             "Windows 用 python 代替 python3。"
         ),
     )
@@ -613,7 +614,12 @@ def build_parser() -> ArgumentParser:
     parser.add_argument(
         "--check",
         action="store_true",
-        help="只校验输出目录中的产物是否同步，有差异或产物被手改返回 3",
+        help="只校验输出目录中的产物是否同步；未生成、有差异或产物被手改返回 3",
+    )
+    parser.add_argument(
+        "--allow-missing",
+        action="store_true",
+        help="配合 --check：未生成的产物不算失败；内容漂移或被手改仍返回 3",
     )
     parser.add_argument(
         "--print",
@@ -966,6 +972,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.list_profiles and (
         args.check
+        or args.allow_missing
         or args.print_preview
         or args.test
         or args.dry_run
@@ -974,9 +981,12 @@ def main(argv: list[str] | None = None) -> int:
         or args.targets
     ):
         print(
-            "参数错误：--list 只做清单，不能与输出名 / --from / --check / --print / --test / --dry-run / --force 同时使用",
+            "参数错误：--list 只做清单，不能与输出名 / --from / --check / --allow-missing / --print / --test / --dry-run / --force 同时使用",
             file=sys.stderr,
         )
+        return EXIT_USAGE
+    if args.allow_missing and not args.check:
+        print("参数错误：--allow-missing 只能与 --check 一起使用", file=sys.stderr)
         return EXIT_USAGE
     if args.check and args.print_preview:
         print("参数错误：--print 与 --check 不能同时使用", file=sys.stderr)
@@ -1050,7 +1060,12 @@ def main(argv: list[str] | None = None) -> int:
                             f"提示: {name} 不带 .generated 标记，且输出目录在仓库内，注意别误提交",
                             file=sys.stderr,
                         )
-        if not args.print_preview and not args.dry_run and not output_dir.is_dir():
+        if (
+            not args.print_preview
+            and not args.dry_run
+            and not args.check
+            and not output_dir.is_dir()
+        ):
             output_dir.mkdir(parents=True, exist_ok=True)
             print(f"[创建目录] {output_dir}")
         if args.verbose:
@@ -1064,7 +1079,8 @@ def main(argv: list[str] | None = None) -> int:
 
     revision = time.strftime("%Y%m%d.%H:%M")
     written = unchanged = planned = printed = 0
-    stale: list[str] = []
+    missing: list[str] = []
+    drifted: list[str] = []
     blocked: list[str] = []
     rendered: list[Path] = []
 
@@ -1101,12 +1117,18 @@ def main(argv: list[str] | None = None) -> int:
         if args.check:
             if state == "uptodate":
                 print(f"[最新] {profile['name']}")
+            elif state == "missing":
+                print(f"[未生成] {profile['name']}")
+                missing.append(profile["name"])
             elif state in ("foreign", "modified"):
-                print(f"[需渲染] {profile['name']} (原因: {state},产物被手改过,需 --force 覆盖)")
-                stale.append(profile["name"])
+                print(
+                    f"[需覆盖] {profile['name']} "
+                    f"(原因: {state},产物被手改过或非本脚本生成,需 --force 覆盖)"
+                )
+                drifted.append(profile["name"])
             else:
-                print(f"[需渲染] {profile['name']} (原因: {state})")
-                stale.append(profile["name"])
+                print(f"[需重渲染] {profile['name']} (原因: 模板或清单已变)")
+                drifted.append(profile["name"])
             continue
 
         if state == "uptodate":
@@ -1139,12 +1161,25 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_OK
 
     if args.check:
-        if stale:
+        parts: list[str] = []
+        if missing:
+            parts.append(f"{len(missing)} 份未生成")
+        if drifted:
+            parts.append(f"{len(drifted)} 份需要重新渲染")
+        if not parts:
+            print("检查结果: 全部与模板一致")
+            return EXIT_OK
+        print("检查结果: " + "，".join(parts))
+        if drifted:
             print(
-                f"检查结果: {len(stale)} 份需要重新渲染;手工改动过的先对比内容再决定是否 --force"
+                "提示: 手改或非本脚本生成的产物先对比内容，确认后再 --force；"
+                "模板或清单变更的直接重新渲染"
             )
             return EXIT_STATE
-        print("检查结果: 全部与模板一致")
+        if not args.allow_missing:
+            print("提示: 首次生成请直接运行渲染；只关心漂移可加 --allow-missing")
+            return EXIT_STATE
+        print("提示: --allow-missing 已忽略未生成项")
         return EXIT_OK
 
     print(f"汇总: 写入 {written} 份, 未变 {unchanged} 份, 跳过 {len(blocked)} 份, 预览 {planned} 份")

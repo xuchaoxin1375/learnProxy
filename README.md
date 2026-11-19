@@ -14,7 +14,8 @@
 
 ```bash
 python3 render_profile.py --list        # 看输出目录、已定义 profile 与产物状态
-python3 render_profile.py --check       # 与模板比对；首次未生成会返回 3
+python3 render_profile.py --check       # 与模板比对；首次未生成也返回 3
+python3 render_profile.py --check --allow-missing   # 只关心漂移，未生成不算失败
 python3 render_profile.py --dry-run     # 只看会写哪些文件
 python3 render_profile.py               # 渲染全部
 python3 render_profile.py --test --mihomo-home <HomeDir>   # 渲染后跑 mihomo -t
@@ -55,7 +56,7 @@ cp templates/spider_lb.profiles.json templates/spider_lb.profiles.local.json
 | `0` | 成功 | 渲染完成、检查通过、更新成功 |
 | `1` | 运行或配置解析失败 | API 不可达、模板 / JSON 解析失败、`mihomo -t` 失败、目标更新失败 |
 | `2` | 用法错误 | 参数冲突、缺前置条件、未知目标、参数值不合法 |
-| `3` | 状态差异或需要人工处理 | `--check` 发现差异、产物被手改、provider 过期、`--require-providers` 没有 provider |
+| `3` | 状态差异或需要人工处理 | `--check` 发现差异、产物被手改、未生成（除非加 `--allow-missing`）、provider 过期、`--require-providers` 没有 provider |
 
 `render_profile.py --test` 需要 `--mihomo-home` 或 `MIHOMO_HOME`；缺少时返回 `2`，不会假装校验通过。
 

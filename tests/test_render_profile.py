@@ -14,6 +14,23 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import render_profile as rp
 
 
+def run_main(argv: list[str]) -> tuple[int, str, str]:
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+        code = rp.main(argv)
+    return code, stdout.getvalue(), stderr.getvalue()
+
+
+def make_temp_manifest(tmp: str) -> Path:
+    source = Path(__file__).resolve().parents[1] / "templates" / "spider_lb.profiles.json"
+    manifest = json.loads(source.read_text(encoding="utf-8"))
+    manifest["outputDir"] = tmp
+    path = Path(tmp) / "private.json"
+    path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+    return path
+
+
 class StateTests(unittest.TestCase):
     def test_missing(self) -> None:
         self.assertEqual(rp.state_of(None, "body"), "missing")
@@ -179,23 +196,64 @@ class ManifestTests(unittest.TestCase):
 
     def test_main_uses_explicit_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            source = Path(__file__).resolve().parents[1] / "templates" / "spider_lb.profiles.json"
-            manifest = json.loads(source.read_text(encoding="utf-8"))
-            manifest["outputDir"] = tmp
-            path = Path(tmp) / "private.json"
+            path = make_temp_manifest(tmp)
+            code, stdout, stderr = run_main(["--manifest", os.fspath(path), "--dry-run"])
+            self.assertEqual(code, 0)
+            self.assertIn(f"[清单] {path}", stderr)
+            self.assertIn(f"[输出目录] {Path(tmp)}", stdout)
+
+
+class CheckTests(unittest.TestCase):
+    def test_check_missing_fails_without_allow(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = make_temp_manifest(tmp)
+            code, stdout, _ = run_main(["--manifest", os.fspath(path), "--check"])
+            self.assertEqual(code, rp.EXIT_STATE)
+            self.assertIn("[未生成] default.generated.yaml", stdout)
+            self.assertIn("2 份未生成", stdout)
+
+    def test_check_missing_allowed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = make_temp_manifest(tmp)
+            code, stdout, _ = run_main(
+                ["--manifest", os.fspath(path), "--check", "--allow-missing"]
+            )
+            self.assertEqual(code, rp.EXIT_OK)
+            self.assertIn("--allow-missing 已忽略", stdout)
+
+    def test_check_does_not_create_output_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = make_temp_manifest(tmp)
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+            output_dir = Path(tmp) / "new" / "out"
+            manifest["outputDir"] = os.fspath(output_dir)
             path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
 
-            stdout = io.StringIO()
-            stderr = io.StringIO()
-            with (
-                contextlib.redirect_stdout(stdout),
-                contextlib.redirect_stderr(stderr),
-            ):
-                code = rp.main(["--manifest", os.fspath(path), "--dry-run"])
+            code, _, _ = run_main(["--manifest", os.fspath(path), "--check"])
+            self.assertEqual(code, rp.EXIT_STATE)
+            self.assertFalse(output_dir.exists())
 
-            self.assertEqual(code, 0)
-            self.assertIn(f"[清单] {path}", stderr.getvalue())
-            self.assertIn(f"[输出目录] {Path(tmp)}", stdout.getvalue())
+    def test_check_drift_still_fails_with_allow_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = make_temp_manifest(tmp)
+            code, _, _ = run_main(["--manifest", os.fspath(path)])
+            self.assertEqual(code, rp.EXIT_OK)
+
+            target = Path(tmp) / "default.generated.yaml"
+            target.write_text(
+                target.read_text(encoding="utf-8") + "# 手改\n", encoding="utf-8"
+            )
+            code, stdout, _ = run_main(
+                ["--manifest", os.fspath(path), "--check", "--allow-missing"]
+            )
+            self.assertEqual(code, rp.EXIT_STATE)
+            self.assertIn("[需覆盖] default.generated.yaml", stdout)
+            self.assertIn("1 份需要重新渲染", stdout)
+
+    def test_allow_missing_requires_check(self) -> None:
+        code, _, stderr = run_main(["--allow-missing"])
+        self.assertEqual(code, rp.EXIT_USAGE)
+        self.assertIn("只能与 --check", stderr)
 
 
 class TemplateTests(unittest.TestCase):

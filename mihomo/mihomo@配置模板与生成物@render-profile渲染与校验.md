@@ -66,7 +66,7 @@ mihomo_provider.py         上述脚本共用的 API、路径与运行时定位
 - 新增 profile（`profiles.json` 里加一项）自动被忽略，不用再改 `.gitignore`
 - 是否生成物有两个独立证据：文件名后缀 `.generated.yaml`，以及文件头 `# 生成指纹:sha256:...`
 
-判断某个文件是否真的由脚本生成，用 `python3 render_profile.py --check`：与模板一致退出 `0`，手改、过期或缺失退出 `3`。`--list` 与 `--dry-run` 会先打印实际输出目录。
+判断某个文件是否真的由脚本生成，用 `python3 render_profile.py --check`：与模板一致退出 `0`，手改、过期或缺失退出 `3`。首次生成前只关心漂移，可加 `--allow-missing`，让“未生成”不算失败；手改或过期仍然退出 `3`。`--list` 与 `--dry-run` 会先打印实际输出目录。
 
 ## 本地私有清单
 
@@ -286,7 +286,8 @@ proxy-providers:
 | 看要写哪些文件 | `python3 render_profile.py --dry-run` | 只列出文件与汇总，不落盘；要看内容用 `--print` |
 | 终端预览正文 | `python3 render_profile.py crawler --from spider_lb_ch --print` | 渲染结果打到 stdout，含文件头；不落盘 |
 | 保存单份预览 | `python3 render_profile.py default --print > preview.yaml` | 单份才是一份可直接加载的配置；多份会被注释分隔，只作预览 |
-| 校验同步 | `python3 render_profile.py --check` | 与模板一致退出 `0`，有差异或产物被手改退出 `3` |
+| 校验同步 | `python3 render_profile.py --check` | 与模板一致退出 `0`；未生成、有差异或产物被手改退出 `3` |
+| 校验时忽略未生成 | `python3 render_profile.py --check --allow-missing` | 只关心漂移；未生成不算失败，手改或过期仍退出 `3` |
 | 覆盖手改 | `python3 render_profile.py --force` | 生成物被手改过时的显式入口 |
 | 渲染并测配置 | `python3 render_profile.py --test --mihomo-home <HomeDir>` | 渲染后调 `mihomo -t`；缺 `--mihomo-home` / `MIHOMO_HOME` 返回 `2` |
 
@@ -316,7 +317,7 @@ done
 
 Windows 上 PowerShell 5.1 的 `>` 会把输出转成 UTF-16，需要时改用 `--print | Out-File -Encoding utf8 preview.yaml`；pwsh 7 与 bash 的 `>` 没有这个问题。
 
-退出码与其它脚本一致：`0` 成功、`1` 运行或配置解析失败（含 `--test` 失败）、`2` 用法错误（参数冲突、缺 `--mihomo-home`、未知目标）、`3` 状态差异（`--check` 发现差异、产物被手改需要 `--force`）。
+退出码与其它脚本一致：`0` 成功、`1` 运行或配置解析失败（含 `--test` 失败）、`2` 用法错误（参数冲突、缺 `--mihomo-home`、未知目标）、`3` 状态差异（`--check` 发现差异、未生成、产物被手改需要 `--force`）。`--check --allow-missing` 只把“未生成”降级为成功，漂移仍返回 `3`。
 
 ## 改订阅更新节奏的正确位置
 
@@ -342,7 +343,7 @@ Windows 上 PowerShell 5.1 的 `>` 会把输出转成 UTF-16，需要时改用 `
 
 ## 生成物指纹怎么用
 
-- `--check` 读文件头指纹并与正文重算结果比对：正文被手改、或模板已更新而产物未重渲染，都会报差异并退出 `3`
+- `--check` 读文件头指纹并与正文重算结果比对：正文被手改、或模板已更新而产物未重渲染，都会报差异并退出 `3`；只有“未生成”可以在加 `--allow-missing` 时不报错
 - 渲染时若发现目标文件被手改，脚本要求显式 `--force`（同样退出 `3`），避免静默覆盖
 - 所以“临时在产物上试一下”的做法会立刻被下次 `--check` 抓到，确认有用再回写到模板和值文件
 
