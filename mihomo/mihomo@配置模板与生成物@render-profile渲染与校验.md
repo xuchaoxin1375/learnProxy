@@ -38,6 +38,7 @@ mihomo_provider.py         上述脚本共用的 API、路径与运行时定位
 | --- | --- | --- |
 | `templates/spider_lb.template.yaml` | 配置正文，含 `{{...}}` 占位符与生成标记 | 改这里 |
 | `templates/spider_lb.profiles.json` | 公开的 `defaults` + 每份产物的订阅、端口、策略（订阅为占位） | 改结构或占位值 |
+| `templates/spider_lb.profiles.local.example.json` | 本地私有清单骨架：三份 profile、管理端口和订阅占位符 | 复制成 `.local.json` 后再填真实订阅 |
 | `templates/spider_lb.profiles.local.json` | 可选的本地私有清单，放真实订阅；已被 `.gitignore` 忽略 | 本地改这里，不提交 |
 | `<输出目录>/default.generated.yaml`、`spider_lb_ch.generated.yaml`、`spider_lb_sticky.generated.yaml` | 生成物，头部有修订日期与 `# 生成指纹:sha256:...`；`<输出目录>` 默认是 `~/Desktop/mihomo-profiles`，无桌面目录时是 `~/mihomo-profiles` | 不要手改，会被覆盖或触发 `--force` 要求 |
 | `render_profile.py` | 渲染、指纹校验、可选跑 `mihomo -t` | 工具本身 |

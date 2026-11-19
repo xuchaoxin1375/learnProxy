@@ -1,0 +1,41 @@
+{
+  "_readme": "复制本文件为 templates/spider_lb.profiles.local.json 后填写真实订阅；该文件已被 .gitignore 忽略，不会提交。render_profile.py 会自动优先读取 .local.json。也可以把本文件复制到桌面或任意私有目录，用 --manifest /path/to/private.json 指定。不要编辑生成的 *.generated.yaml，也不要把真实订阅写进公开的 spider_lb.profiles.json。default.generated.yaml 对应 A（7897/9097），已有 Clash Verge 时不要再启动；B 用 spider_lb_ch 或 spider_lb_sticky。",
+  "template": "spider_lb.template.yaml",
+  "defaults": {
+    "description": "本地私有配置:入口 171xx,按连接轮询换出口",
+    "subscriptions": {
+      "online-sub1": {
+        "url": "https://example.com/api/v1/client/subscribe?token=YOUR_SUBSCRIPTION_TOKEN"
+      }
+    },
+    "subscriptionInterval": 43200,
+    "portAll": 17100,
+    "portEu": 17110,
+    "mixedPort": 7897,
+    "externalControllerPort": 9097,
+    "strategy": "round-robin"
+  },
+  "profiles": [
+    {
+      "name": "default.generated.yaml"
+    },
+    {
+      "name": "spider_lb_ch.generated.yaml",
+      "description": "对齐版本:入口 172xx,同一目标固定出口",
+      "portAll": 17200,
+      "portEu": 17210,
+      "mixedPort": 17897,
+      "externalControllerPort": 19097,
+      "strategy": "consistent-hashing"
+    },
+    {
+      "name": "spider_lb_sticky.generated.yaml",
+      "description": "会话粘性版本:入口 173xx,同一来源+目标 10 分钟粘性",
+      "portAll": 17300,
+      "portEu": 17310,
+      "mixedPort": 17997,
+      "externalControllerPort": 19197,
+      "strategy": "sticky-sessions"
+    }
+  ]
+}

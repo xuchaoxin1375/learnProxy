@@ -29,14 +29,21 @@ python3 check_provider_status.py --secret '<secret>' --summary
 python3 trigger_provider_update.py <provider> --dry-run
 ```
 
-`templates/spider_lb.profiles.json` 里的订阅地址是占位符。要填真实订阅，先复制一份本地清单再改，避免把真实地址写进跟踪文件：
+`templates/spider_lb.profiles.json` 里的订阅地址是占位符。要填真实订阅，先复制本地骨架再改：
 
 ```bash
-cp templates/spider_lb.profiles.json templates/spider_lb.profiles.local.json
+cp templates/spider_lb.profiles.local.example.json templates/spider_lb.profiles.local.json
 # 编辑 templates/spider_lb.profiles.local.json 里的 subscriptions
 ```
 
-`templates/spider_lb.profiles.local.json` 已被 `.gitignore` 忽略；脚本默认优先读取它，没有时回退到 `templates/spider_lb.profiles.json`。也可以 `--manifest /path/to/private.json` 指定任意位置的清单（相对路径按当前目录解析）。
+`templates/spider_lb.profiles.local.json` 已被 `.gitignore` 忽略；脚本默认优先读取它，没有时回退到 `templates/spider_lb.profiles.json`。也可以把骨架复制到桌面或任意私有目录，用 `--manifest /path/to/private.json` 指定，避免真实订阅留在仓库工作区：
+
+```bash
+cp templates/spider_lb.profiles.local.example.json ~/Desktop/spider_lb.profiles.local.json
+python3 render_profile.py --manifest ~/Desktop/spider_lb.profiles.local.json
+```
+
+不要编辑 `~/Desktop/mihomo-profiles/*.generated.yaml`：那是渲染产物，手改会被指纹校验拒绝覆盖；真实订阅只写私有清单。
 
 改了模板或清单后重新渲染；默认生成到 `~/Desktop/mihomo-profiles`（没有 `Desktop` 目录时回退 `~/mihomo-profiles`），`--list` / `--dry-run` 会打印实际输出目录。生成物不会自动同步到 Clash Verge，仍需在 GUI 里重新应用当前 profile。
 
@@ -104,6 +111,7 @@ cp templates/spider_lb.profiles.json templates/spider_lb.profiles.local.json
 
 - `spider_lb_ch.generated.yaml` 是 172xx + `consistent-hashing`，管理端口 17897/19097。
 - `spider_lb_sticky.generated.yaml` 是 173xx + `sticky-sessions`，管理端口 17997/19197。
+- `default.generated.yaml` 对应 A（7897/9097）；已有 Clash Verge 时不要再启动它，避免端口冲突。
 - 爬虫侧：A 用 `http://127.0.0.1:17111`（美国轮询），B 用 `http://127.0.0.1:17211`（美国粘性）或 `http://127.0.0.1:17311`（美国会话粘性）；`+0` 的 `17100/17200/17300` 是不分国家的 all 入口。
 - 两份 B 配置不要同时启动，除非你把 `external-controller-pipe` 也改成不同名字；它们共用模板里的 pipe。
 - 只有 A 开 TUN；B 的 `tun.enable` 保持 `false`。
