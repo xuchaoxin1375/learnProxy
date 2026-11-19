@@ -362,6 +362,51 @@ class PortTests(unittest.TestCase):
             rp.resolve_ports(entry, "p", ["all", "eu", "us"], [])
 
 
+class ManagementTests(unittest.TestCase):
+    def entry(self, **overrides: object) -> dict[str, object]:
+        entry: dict[str, object] = {
+            "name": "p.generated.yaml",
+            "description": "demo",
+            "subscriptions": {"s": {"url": "https://example.com/sub"}},
+            "subscriptionInterval": 60,
+            "strategy": "round-robin",
+        }
+        entry.update(overrides)
+        return entry
+
+    def test_default_management_ports(self) -> None:
+        profile = rp.assert_profile(self.entry())
+        self.assertEqual(profile["mixed_port"], rp.DEFAULT_MIXED_PORT)
+        self.assertEqual(profile["external_controller_port"], rp.DEFAULT_EXTERNAL_CONTROLLER_PORT)
+
+    def test_custom_management_ports(self) -> None:
+        profile = rp.assert_profile(
+            self.entry(mixedPort=17897, externalControllerPort=19097)
+        )
+        self.assertEqual(profile["mixed_port"], 17897)
+        self.assertEqual(profile["external_controller_port"], 19097)
+
+    def test_management_ports_must_differ(self) -> None:
+        with self.assertRaises(rp.ProfileError):
+            rp.assert_profile(self.entry(mixedPort=17897, externalControllerPort=17897))
+
+    def test_management_port_out_of_range(self) -> None:
+        with self.assertRaises(rp.ProfileError):
+            rp.assert_profile(self.entry(mixedPort=80))
+
+    def test_listener_conflicts_with_management_port(self) -> None:
+        template = (
+            "mixed-port: {{MIXED_PORT}}\n"
+            "external-controller: 127.0.0.1:{{EXTERNAL_CONTROLLER_PORT}}\n"
+            "port: {{PORT_ALL}}\n"
+            "{{PROXY_PROVIDERS}}\n"
+            "{{USE_PROVIDERS}}\n"
+        )
+        profile = rp.assert_profile(self.entry(mixedPort=17100, portAll=17100))
+        with self.assertRaises(rp.ProfileError):
+            rp.build_body(template, profile, ["all"], [])
+
+
 class SelectionTests(unittest.TestCase):
     def setUp(self) -> None:
         self.manifest = {

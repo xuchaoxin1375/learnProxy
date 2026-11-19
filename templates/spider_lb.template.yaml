@@ -1,7 +1,7 @@
 # 修订时间:2026/11/12-14:17
 # 如果是windows系统中的wsl中使用mihomo内核,注意避免和windows主机上的相关程序端口冲突
 # 例如windows上的mihomo客户端占用同一个端口就会导致错误(尤其是启动用mirror网络模式的情况下.)
-mixed-port: 7897 # 按需更改,wsl用户建议更换端口,例如7890
+mixed-port: {{MIXED_PORT}} # 由 profiles.json 的 mixedPort 填入；多实例时每份必须不同
 log-level: info
 # 本配置的爬虫入口全部监听 127.0.0.1,不需要局域网访问;
 # 需要给局域网设备用时:改 true,并补 bind-address 与 authentication,不要只开 allow-lan
@@ -12,11 +12,12 @@ ipv6: true
 mode: rule
 
 # 外部控制api:默认只允许本机访问(运行mihomo服务的设备自身)
-external-controller: 127.0.0.1:9097
-# 需要局域网面板时才改成 0.0.0.0:9097,并把 secret 换成随机长串(现在这个值只够本机使用)
+external-controller: 127.0.0.1:{{EXTERNAL_CONTROLLER_PORT}}
+# 需要局域网面板时才改成 0.0.0.0:<port>,并把 secret 换成随机长串(现在这个值只够本机使用)
 secret: '1'
 
 # 供mihomo客户端使用(例如clash-verge等GUI客户端),命名管道不校验 secret,本机进程皆可控制
+# 多实例时改成不同 pipe 名，或删除此行走 TCP 控制器
 external-controller-pipe: \\.\pipe\verge-mihomo
 
 # 允许公网网页访问本机mihomo的api接口(白名单列表),只放行自己实际在用的面板

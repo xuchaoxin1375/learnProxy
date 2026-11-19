@@ -20,6 +20,11 @@ python3 render_profile.py --dry-run     # 只看会写哪些文件
 python3 render_profile.py               # 渲染全部
 python3 render_profile.py --test --mihomo-home <HomeDir>   # 渲染后跑 mihomo -t
 
+python3 mihomo_instance.py validate --config <config.yaml> --mihomo <mihomo>
+python3 mihomo_instance.py start --config <config.yaml> --home <实例目录> --mihomo <mihomo>
+python3 mihomo_instance.py status --home <实例目录>
+python3 mihomo_instance.py stop --home <实例目录>
+
 python3 check_provider_status.py --secret '<secret>' --summary
 python3 trigger_provider_update.py <provider> --dry-run
 ```
@@ -40,6 +45,7 @@ cp templates/spider_lb.profiles.json templates/spider_lb.profiles.local.json
 | 路径 | 职责 | 读写行为 |
 | --- | --- | --- |
 | `render_profile.py` | 从模板与 `profiles.json`（或 `--manifest` 指定的本地清单）渲染 profile，指纹校验，`--manifest` / `--list` / `--print` / `--check` / `--test` | 默认写 `~/Desktop/mihomo-profiles/*.generated.yaml`；无桌面目录时回退 `~/mihomo-profiles` |
+| `mihomo_instance.py` | 校验、启动、查看和停止独立 mihomo 实例；PID 文件与日志落在实例目录 | 写实例目录；只停自己 PID 文件记录的进程，不按进程名清理 |
 | `check_provider_status.py` | 检查 proxy-provider / rule-provider 新鲜度、订阅用量、缓存路径 | 只读，仅 `GET` 与本地文件检查 |
 | `trigger_provider_update.py` | 手动触发订阅或规则集更新、单 provider 测速 | 写操作，会真实下载并消耗流量 |
 | `mihomo_provider.py` | 上面脚本共用的 API、运行时定位、缓存路径、输出格式化 | 工具模块，不单独运行 |
@@ -68,6 +74,7 @@ cp templates/spider_lb.profiles.json templates/spider_lb.profiles.local.json
 ├─ LICENSE                    MIT 许可证
 ├─ .gitignore                 忽略生成物、本地节点与密钥
 ├─ render_profile.py          配置渲染
+├─ mihomo_instance.py         独立实例校验 / 启动 / 状态 / 停止
 ├─ check_provider_status.py   只读状态检查
 ├─ trigger_provider_update.py 手动更新 / 测速
 ├─ mihomo_provider.py         共用工具模块
@@ -84,6 +91,24 @@ cp templates/spider_lb.profiles.json templates/spider_lb.profiles.local.json
 脚本默认把生成物写到 `~/Desktop/mihomo-profiles`，没有 `Desktop` 目录时回退 `~/mihomo-profiles`；`--list` / `--dry-run` 会打印实际输出目录。需要固定到别处时，在清单里写 `outputDir`（支持 `~`、绝对路径或相对 `templates/` 的路径）。旧产物不会自动搬移，需要时手动移动或用 `outputDir` 指回旧目录。`templates/spider_lb.profiles.local.json` 是本地私有清单，已被 `.gitignore` 忽略，不随仓库提供。`templates/profiles/` 里是历史模板与官方示例（如 `mihomo.template.yaml`、`proxy_full_template.yaml`），当前渲染链路只读 `templates/spider_lb.template.yaml`，改模板时不要改错文件。
 
 自建节点文件不随仓库提供。需要接回本地节点时，把节点 YAML 放到本地未入库目录（例如仓库根的 `profiles/`，需要时新建；相关文件名已在 `.gitignore` 中），再按 `templates/spider_lb.template.yaml` 里的注释示例启用本地 provider，最后在 GUI 里重新应用配置。模板与示例文件里的 IP、UUID、Reality 密钥与密码都只是占位示例。
+
+## 多实例：轮询与粘性并存
+
+同一台机可以同时跑 Clash Verge 和一个独立 mihomo 实例；关键是管理端口和入口端口都不能撞。当前模板的端口分工：
+
+| 实例 | 管理端口 | 业务入口 | 策略 | 典型用途 |
+| --- | --- | --- | --- | --- |
+| A：Clash Verge | `7897` / `9097` | `171xx` | `round-robin` | 429、Shopify `/products.json` 等需要轮换 IP 的任务 |
+| B：独立 mihomo | `17897` / `19097` | `172xx` | `consistent-hashing` | 反爬/会话站，同一目标固定出口 |
+| B：独立 mihomo | `17997` / `19197` | `173xx` | `sticky-sessions` | 10 分钟会话粘性；按需使用 |
+
+- `spider_lb_ch.generated.yaml` 是 172xx + `consistent-hashing`，管理端口 17897/19097。
+- `spider_lb_sticky.generated.yaml` 是 173xx + `sticky-sessions`，管理端口 17997/19197。
+- 爬虫侧：A 用 `http://127.0.0.1:17111`（美国轮询），B 用 `http://127.0.0.1:17211`（美国粘性）或 `http://127.0.0.1:17311`（美国会话粘性）；`+0` 的 `17100/17200/17300` 是不分国家的 all 入口。
+- 两份 B 配置不要同时启动，除非你把 `external-controller-pipe` 也改成不同名字；它们共用模板里的 pipe。
+- 只有 A 开 TUN；B 的 `tun.enable` 保持 `false`。
+- 每份 B 配置用独立 `--home`，不要和 Clash Verge 的 `-d` 共用。
+- `mihomo_instance.py stop` 只停自己 PID 文件里的进程，不会碰 Clash Verge 的内核。
 
 ## 文档入口
 
@@ -111,9 +136,9 @@ cp templates/spider_lb.profiles.json templates/spider_lb.profiles.local.json
 ## 开发与验证
 
 ```bash
-python3 -m unittest discover -s tests          # 43 个单元测试
+python3 -m unittest discover -s tests          # 全部单元测试
 ruff check .
-pyright render_profile.py mihomo_provider.py check_provider_status.py trigger_provider_update.py tests
+pyright render_profile.py mihomo_instance.py mihomo_provider.py check_provider_status.py trigger_provider_update.py tests
 ```
 
 当前没有配置 CI；提交前至少跑一遍上面的测试，并在渲染后跑 `python3 render_profile.py --check`。

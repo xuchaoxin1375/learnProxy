@@ -45,6 +45,8 @@ TEMPLATE_DIR = BASE_DIR / "templates"
 MANIFEST_PATH = TEMPLATE_DIR / "spider_lb.profiles.json"
 LOCAL_MANIFEST_PATH = TEMPLATE_DIR / "spider_lb.profiles.local.json"
 DEFAULT_OUTPUT_DIR_NAME = "mihomo-profiles"
+DEFAULT_MIXED_PORT = 7897
+DEFAULT_EXTERNAL_CONTROLLER_PORT = 9097
 
 STRATEGY_NAMES = ("round-robin", "consistent-hashing", "sticky-sessions")
 REGION_PORT_FIELDS = {"all": "portAll", "eu": "portEu"}
@@ -61,6 +63,8 @@ PROFILE_FIELDS = {
     "countryOrder",
     "ports",
     "allowCommonPorts",
+    "mixedPort",
+    "externalControllerPort",
 }
 SUBSCRIPTION_FIELDS = {"url", "interval", "filter", "exclude-filter", "proxy", "path"}
 
@@ -209,6 +213,21 @@ def merge_entry(entry: dict[str, Any], defaults: dict[str, Any] | None) -> dict[
     return merged
 
 
+def management_ports(entry: dict[str, Any], name: str) -> tuple[int, int]:
+    """读取 mixed-port 与 external-controller 端口，二者必须独立且可用。"""
+    mixed = int_value(entry.get("mixedPort", DEFAULT_MIXED_PORT), f"{name}: mixedPort")
+    controller = int_value(
+        entry.get("externalControllerPort", DEFAULT_EXTERNAL_CONTROLLER_PORT),
+        f"{name}: externalControllerPort",
+    )
+    for label, port in (("mixedPort", mixed), ("externalControllerPort", controller)):
+        if port < 1024 or port > 65535:
+            raise ProfileError(f"{name}: {label} 超出可用范围（1024-65535）: {port}")
+    if mixed == controller:
+        raise ProfileError(f"{name}: mixedPort 与 externalControllerPort 不能相同: {mixed}")
+    return mixed, controller
+
+
 def assert_profile(entry: dict[str, Any]) -> dict[str, Any]:
     required = ("name", "description", "subscriptions", "strategy")
     for field in required:
@@ -233,6 +252,8 @@ def assert_profile(entry: dict[str, Any]) -> dict[str, Any]:
         default_interval = int_value(entry["subscriptionInterval"], f"{name}: subscriptionInterval")
         if default_interval < 60:
             raise ProfileError(f"{name}: subscriptionInterval 至少 60 秒，当前: {default_interval}")
+
+    mixed_port, external_controller_port = management_ports(entry, name)
 
     subscriptions: list[dict[str, Any]] = []
     raw_subscriptions = entry["subscriptions"]
@@ -284,6 +305,8 @@ def assert_profile(entry: dict[str, Any]) -> dict[str, Any]:
         "name": name,
         "description": str(entry["description"]),
         "strategy": strategy,
+        "mixed_port": mixed_port,
+        "external_controller_port": external_controller_port,
         "subscriptions": subscriptions,
         "entry": entry,
     }
@@ -449,7 +472,11 @@ def replace_block(text: str, marker: str, lines: list[str]) -> str:
 
 
 def placeholder_values(profile: dict[str, Any], ports: dict[str, int]) -> dict[str, str]:
-    values = {"{{STRATEGY}}": profile["strategy"]}
+    values = {
+        "{{STRATEGY}}": profile["strategy"],
+        "{{MIXED_PORT}}": str(profile["mixed_port"]),
+        "{{EXTERNAL_CONTROLLER_PORT}}": str(profile["external_controller_port"]),
+    }
     for key, value in ports.items():
         values[f"{{{{PORT_{key.upper()}}}}}"] = str(value)
     return values
@@ -875,6 +902,12 @@ def build_body(
     reserved: list[int],
 ) -> str:
     ports = resolve_ports(profile["entry"], profile["name"], port_keys, reserved)
+    for label, port in (
+        ("mixedPort", profile["mixed_port"]),
+        ("externalControllerPort", profile["external_controller_port"]),
+    ):
+        if port in ports.values():
+            raise ProfileError(f"{profile['name']}: {label}={port} 与入口端口冲突")
     body = template
     body = replace_block(body, "PROXY_PROVIDERS", provider_block_lines(profile["subscriptions"]))
     body = replace_block(body, "USE_PROVIDERS", use_provider_lines(profile["subscriptions"]))

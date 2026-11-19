@@ -11,6 +11,8 @@
     "subscriptionInterval": 43200,
     "portAll": 17100,
     "portEu": 17110,
+    "mixedPort": 7897,
+    "externalControllerPort": 9097,
     "strategy": "round-robin"
   },
   "profiles": [
@@ -27,6 +29,8 @@
       },
       "portAll": 17200,
       "portEu": 17210,
+      "mixedPort": 17897,
+      "externalControllerPort": 19097,
       "strategy": "consistent-hashing"
     },
     {
@@ -34,6 +38,8 @@
       "description": "会话粘性版本:入口 173xx,同一来源+目标 10 分钟粘性",
       "portAll": 17300,
       "portEu": 17310,
+      "mixedPort": 17997,
+      "externalControllerPort": 19197,
       "strategy": "sticky-sessions"
     }
   ]

@@ -41,6 +41,7 @@ mihomo_provider.py         上述脚本共用的 API、路径与运行时定位
 | `templates/spider_lb.profiles.local.json` | 可选的本地私有清单，放真实订阅；已被 `.gitignore` 忽略 | 本地改这里，不提交 |
 | `<输出目录>/default.generated.yaml`、`spider_lb_ch.generated.yaml`、`spider_lb_sticky.generated.yaml` | 生成物，头部有修订日期与 `# 生成指纹:sha256:...`；`<输出目录>` 默认是 `~/Desktop/mihomo-profiles`，无桌面目录时是 `~/mihomo-profiles` | 不要手改，会被覆盖或触发 `--force` 要求 |
 | `render_profile.py` | 渲染、指纹校验、可选跑 `mihomo -t` | 工具本身 |
+| `mihomo_instance.py` | 校验、启动、查看和停止独立 mihomo 实例；PID 文件与日志落在实例目录 | 只停自己 PID 文件记录的进程 |
 
 生成物头部由脚本写入：修订日期、用途说明、profile 描述、生成来源（脚本路径与 `profiles.json` 里的 `template`）、正文指纹。指纹是**正文的 SHA256**，用来判断产物是否被手改过；生成来源也从 `template` 推导，换模板后不会继续写旧文件名。
 
@@ -96,6 +97,8 @@ python3 render_profile.py --manifest templates/spider_lb.profiles.local.json
 | `{{PROXY_PROVIDERS}}` | `subscriptions` | `proxy-providers` 里的在线订阅块，按订阅表循环生成 |
 | `{{USE_PROVIDERS}}` | `subscriptions` | `use-providers` 里的在线订阅条目；接入本地 provider 时再手动追加 |
 | `{{STRATEGY}}` | `strategy` | `com_proxy_group.strategy`（`round-robin` / `consistent-hashing` / `sticky-sessions`） |
+| `{{MIXED_PORT}}` | `mixedPort` | 顶层 `mixed-port`；多实例时每份必须不同 |
+| `{{EXTERNAL_CONTROLLER_PORT}}` | `externalControllerPort` | 顶层 `external-controller` 端口；多实例时每份必须不同 |
 | `{{PORT_ALL}}` `{{PORT_EU}}` | `portAll` / `portEu` | 两个地区级入口 |
 | `{{PORT_US}}` `{{PORT_JP}}` `{{PORT_HK}}` `{{PORT_SG}}` `{{PORT_DE}}` `{{PORT_FR}}` `{{PORT_TH}}` `{{PORT_RU}}` `{{PORT_TW}}` `{{PORT_UK}}` | 由 `portEu` 起按 `countryOrder` 连号推导 | 国家级入口（默认十个，uk 同列） |
 
@@ -116,6 +119,8 @@ python3 render_profile.py --manifest templates/spider_lb.profiles.local.json
     "subscriptionInterval": 43200,
     "portAll": 17100,
     "portEu": 17110,
+    "mixedPort": 7897,
+    "externalControllerPort": 9097,
     "strategy": "round-robin"
   },
   "profiles": [
@@ -128,6 +133,8 @@ python3 render_profile.py --manifest templates/spider_lb.profiles.local.json
       },
       "portAll": 17200,
       "portEu": 17210,
+      "mixedPort": 17897,
+      "externalControllerPort": 19097,
       "strategy": "consistent-hashing"
     },
     {
@@ -135,6 +142,8 @@ python3 render_profile.py --manifest templates/spider_lb.profiles.local.json
       "description": "会话粘性版本:入口 173xx,同一来源+目标 10 分钟粘性",
       "portAll": 17300,
       "portEu": 17310,
+      "mixedPort": 17997,
+      "externalControllerPort": 19197,
       "strategy": "sticky-sessions"
     }
   ]
@@ -166,6 +175,7 @@ python3 render_profile.py probe.yaml               # 显式 .yaml，按原样存
 | `subscriptions` | provider 名 → `{ url, interval?, filter?, exclude-filter?, proxy?, path? }`；至少一项，增删订阅只改这里 | 全局 |
 | `subscriptionInterval` | 订阅更新周期（秒）默认值，供没写 `interval` 的订阅使用，适合放 `defaults` | 全局 |
 | `strategy` | 负载均衡策略，决定同组内按连接轮换还是固定出口 | 全局 |
+| `mixedPort` / `externalControllerPort` | 顶层 `mixed-port` 与 `external-controller` 端口；多实例时每份必须不同 | 全局（默认 7897/9097） |
 | `portAll` / `portEu` | 两个地区入口，`portEu` 同时是国家端口的起点 | 连号（默认）；模板里有对应占位符时必填 |
 | `countryOrder` | 国家顺序，缺省 us/jp/hk/sg/de/fr/th/ru/tw/uk | 连号（默认）；可选，新增国家追加到末尾 |
 | `ports` | 显式端口表，键为占位符后缀小写（`all`/`eu`/`us`…） | 显式（可选）；与 `portAll`/`portEu`/`countryOrder` 互斥 |
@@ -237,7 +247,34 @@ proxy-providers:
 
 选 1xxxx 的原因：避开 7890-7899（Clash/mihomo 客户端）、9090/9091/9097（API）、1080/1081/10808-10810 等常见端口，也低于系统临时端口区间（Windows 49152+、Linux 32768+）。每段留 79 个国家位，当前用 10 个（含 uk）。
 
-三份 profile 的 band 不重叠（171xx / 172xx / 173xx），切换 profile 时爬虫可继续使用对应入口。但 `mixed-port` 与 `external-controller` 仍由模板共用（7897/9097），同一台机上并行跑两个内核仍会撞，需要时再把这两个值也做成占位符。
+三份 profile 的监听 band 不重叠（171xx / 172xx / 173xx），管理端口也已分开：
+
+| profile | mixedPort | externalControllerPort | 典型用途 |
+| --- | --- | --- | --- |
+| `default` | 7897 | 9097 | Clash Verge 当前实例 |
+| `spider_lb_ch` | 17897 | 19097 | 独立实例，172xx |
+| `spider_lb_sticky` | 17997 | 19197 | 独立实例，173xx |
+
+`external-controller-pipe` 仍固定为 `\\.\pipe\verge-mihomo`；同一台机并行跑两份 B 配置时，要把它改成不同名字或删除。只有 A 开 TUN，B 保持 `tun.enable: false`。
+
+## 多实例启动
+
+先渲染目标 profile，再用 `mihomo_instance.py` 校验和启动；`--home` 用独立目录，不要和 Clash Verge 共用：
+
+```bash
+python3 mihomo_instance.py validate \
+  --config ~/Desktop/mihomo-profiles/spider_lb_ch.generated.yaml \
+  --home ~/mihomo-sticky/ch --mihomo /path/to/mihomo
+
+python3 mihomo_instance.py start \
+  --config ~/Desktop/mihomo-profiles/spider_lb_ch.generated.yaml \
+  --home ~/mihomo-sticky/ch --mihomo /path/to/mihomo
+
+python3 mihomo_instance.py status --home ~/mihomo-sticky/ch
+python3 mihomo_instance.py stop --home ~/mihomo-sticky/ch
+```
+
+`stop` 只停 PID 文件里记录的进程，不会按进程名误伤 Clash Verge。
 
 ## 端口两种模式
 
