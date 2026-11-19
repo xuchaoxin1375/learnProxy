@@ -14,6 +14,7 @@ templates/spider_lb.profiles.local.json    可选本地私有清单，存在时�
             ▼  render_profile.py
 ~/Desktop/mihomo-profiles/default.generated.yaml        生成物，头部有修订日期与生成指纹
 ~/Desktop/mihomo-profiles/spider_lb_ch.generated.yaml   生成物
+~/Desktop/mihomo-profiles/spider_lb_sticky.generated.yaml 生成物
 （没有 Desktop 目录时回退 ~/mihomo-profiles）
             │
             ▼  在 GUI 里重新应用 profile
@@ -38,7 +39,7 @@ mihomo_provider.py         上述脚本共用的 API、路径与运行时定位
 | `templates/spider_lb.template.yaml` | 配置正文，含 `{{...}}` 占位符与生成标记 | 改这里 |
 | `templates/spider_lb.profiles.json` | 公开的 `defaults` + 每份产物的订阅、端口、策略（订阅为占位） | 改结构或占位值 |
 | `templates/spider_lb.profiles.local.json` | 可选的本地私有清单，放真实订阅；已被 `.gitignore` 忽略 | 本地改这里，不提交 |
-| `<输出目录>/default.generated.yaml`、`spider_lb_ch.generated.yaml` | 生成物，头部有修订日期与 `# 生成指纹:sha256:...`；`<输出目录>` 默认是 `~/Desktop/mihomo-profiles`，无桌面目录时是 `~/mihomo-profiles` | 不要手改，会被覆盖或触发 `--force` 要求 |
+| `<输出目录>/default.generated.yaml`、`spider_lb_ch.generated.yaml`、`spider_lb_sticky.generated.yaml` | 生成物，头部有修订日期与 `# 生成指纹:sha256:...`；`<输出目录>` 默认是 `~/Desktop/mihomo-profiles`，无桌面目录时是 `~/mihomo-profiles` | 不要手改，会被覆盖或触发 `--force` 要求 |
 | `render_profile.py` | 渲染、指纹校验、可选跑 `mihomo -t` | 工具本身 |
 
 生成物头部由脚本写入：修订日期、用途说明、profile 描述、生成来源（脚本路径与 `profiles.json` 里的 `template`）、正文指纹。指纹是**正文的 SHA256**，用来判断产物是否被手改过；生成来源也从 `template` 推导，换模板后不会继续写旧文件名。
@@ -128,6 +129,13 @@ python3 render_profile.py --manifest templates/spider_lb.profiles.local.json
       "portAll": 17200,
       "portEu": 17210,
       "strategy": "consistent-hashing"
+    },
+    {
+      "name": "spider_lb_sticky.generated.yaml",
+      "description": "会话粘性版本:入口 173xx,同一来源+目标 10 分钟粘性",
+      "portAll": 17300,
+      "portEu": 17310,
+      "strategy": "sticky-sessions"
     }
   ]
 }
@@ -219,17 +227,17 @@ proxy-providers:
 
 每份 profile 独占一个 100 端口 band，band 内按固定偏移分配，新增国家不动已有端口：
 
-| 偏移 | 用途 | 主配置 | 对齐版 |
-| --- | --- | --- | --- |
-| `+0` | `all`，不区分国家 | 17100 | 17200 |
-| `+1`..`+9` | 预留给新的地区组 | — | — |
-| `+10` | `eu`，欧洲组，同时是国家连号起点 | 17110 | 17210 |
-| `+11`..`+89` | 国家入口（含 uk），按 `countryOrder` 连号 | 17111-17120 | 17211-17220 |
-| `+90`..`+99` | 预留给额外入口 | — | — |
+| 偏移 | 用途 | 主配置 | 对齐版 | 会话粘性版 |
+| --- | --- | --- | --- | --- |
+| `+0` | `all`，不区分国家 | 17100 | 17200 | 17300 |
+| `+1`..`+9` | 预留给新的地区组 | — | — | — |
+| `+10` | `eu`，欧洲组，同时是国家连号起点 | 17110 | 17210 | 17310 |
+| `+11`..`+89` | 国家入口（含 uk），按 `countryOrder` 连号 | 17111-17120 | 17211-17220 | 17311-17320 |
+| `+90`..`+99` | 预留给额外入口 | — | — | — |
 
 选 1xxxx 的原因：避开 7890-7899（Clash/mihomo 客户端）、9090/9091/9097（API）、1080/1081/10808-10810 等常见端口，也低于系统临时端口区间（Windows 49152+、Linux 32768+）。每段留 79 个国家位，当前用 10 个（含 uk）。
 
-两份 profile 的 band 不重叠（171xx / 172xx），爬虫可以同时指向两套入口。但 `mixed-port` 与 `external-controller` 仍由模板共用（7897/9097），同一台机上并行跑两个内核仍会撞，需要时再把这两个值也做成占位符。
+三份 profile 的 band 不重叠（171xx / 172xx / 173xx），切换 profile 时爬虫可继续使用对应入口。但 `mixed-port` 与 `external-controller` 仍由模板共用（7897/9097），同一台机上并行跑两个内核仍会撞，需要时再把这两个值也做成占位符。
 
 ## 端口两种模式
 

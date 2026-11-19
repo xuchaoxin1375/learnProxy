@@ -28,6 +28,13 @@
       "portAll": 17200,
       "portEu": 17210,
       "strategy": "consistent-hashing"
+    },
+    {
+      "name": "spider_lb_sticky.generated.yaml",
+      "description": "会话粘性版本:入口 173xx,同一来源+目标 10 分钟粘性",
+      "portAll": 17300,
+      "portEu": 17310,
+      "strategy": "sticky-sessions"
     }
   ]
 }

@@ -142,6 +142,8 @@ com_proxy_group: &com_proxy_group
   # round-robin:按连接轮换出口,抓取分散 IP 用
   # consistent-hashing:同一目标站点固定同一出口,需要保持会话用
   # sticky-sessions:按源地址+目标保持 10 分钟粘性
+  # 需要按 worker 固定出口时，可在 strategy 为 consistent-hashing/sticky-sessions 的组上加 hash-key: in-user，
+  # 并给 listener 配置 users；当前模板不默认启用，避免改变现有入口的认证方式。
   strategy: {{STRATEGY}}
   exclude-filter: *junk
 
@@ -236,7 +238,7 @@ listener-base: &lp
   listen: 127.0.0.1
   udp: true
 # port 与国家入口的对应关系只在这里维护;入口名同时出现在日志、/connections 和 rules 的 IN-NAME 里
-# 端口方案:每份 profile 独占一个 100 端口 band(当前 171xx/172xx),band 内 +0=all、+10=eu、+11 起按国家连号(uk 也在其中)
+# 端口方案:每份 profile 独占一个 100 端口 band(当前 171xx/172xx/173xx),band 内 +0=all、+10=eu、+11 起按国家连号(uk 也在其中)
 # 端口按 portEu 递增分配(us=+1 ... uk=+10),由 profiles.json 的 countryOrder 决定
 listeners:
   - name: crawler-all

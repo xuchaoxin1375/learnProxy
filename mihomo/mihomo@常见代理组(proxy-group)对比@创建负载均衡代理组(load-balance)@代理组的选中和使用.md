@@ -279,6 +279,44 @@ strategy: sticky-sessions
 
 理由：它会基于来源地址和目标地址保持粘性，同一设备访问同一目标时更稳定；官方说明该缓存 10 分钟过期。([虚空终端](https://wiki.metacubex.one/config/proxy-groups/load-balance/))
 
+### 采集：同一 worker 固定出口
+
+采集任务不要把 `round-robin` 当默认：同一站点的连续请求来自不同出口，容易触发风控。按 worker 固定出口有三种做法：
+
+| 做法 | 配置 | 适用 |
+| --- | --- | --- |
+| 目标粘性 | `strategy: consistent-hashing` | 同一目标站点固定同一出口；同一 worker 访问多个站点时会分别映射到不同节点 |
+| 会话粘性 | `strategy: sticky-sessions` | 同一来源地址 + 目标地址固定，缓存 10 分钟；适合短会话 |
+| worker 粘性 | `strategy: consistent-hashing` + `hash-key: in-user` | 每个 worker 一个认证用户，跨站点固定同一节点，没有 10 分钟过期 |
+
+worker 粘性示例：
+
+```yaml
+listeners:
+  - name: crawler-a
+    type: mixed
+    listen: 127.0.0.1
+    port: 17301
+    users:
+      - username: worker-a
+        password: "change-me"
+    proxy: US-LB
+
+proxy-groups:
+  - name: US-LB
+    type: load-balance
+    strategy: consistent-hashing
+    hash-key: in-user
+    proxies:
+      - US-1
+      - US-2
+      - US-3
+```
+
+`hash-key: in-user` 只在 `consistent-hashing` / `sticky-sessions` 下有效，且请求必须带 listener 认证；未认证的请求会回退到该策略原本的 key。使用前先跑 `mihomo -t` 验证当前版本支持。
+
+如果每个 worker 只需要一个固定出口，也可以直接给 listener 写 `proxy: US-1`，不必使用负载均衡组；worker 很多时再用 `hash-key` 分摊。
+
 ## 经典完整配置示例
 
 下面是一个适合新手改造的结构：总入口手动选择，地区自动选择，香港节点负载均衡，最后由规则引用这些组。

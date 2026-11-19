@@ -207,10 +207,12 @@ class CheckTests(unittest.TestCase):
     def test_check_missing_fails_without_allow(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = make_temp_manifest(tmp)
+            manifest = json.loads(path.read_text(encoding="utf-8"))
             code, stdout, _ = run_main(["--manifest", os.fspath(path), "--check"])
             self.assertEqual(code, rp.EXIT_STATE)
             self.assertIn("[未生成] default.generated.yaml", stdout)
-            self.assertIn("2 份未生成", stdout)
+            self.assertIn("[未生成] spider_lb_sticky.generated.yaml", stdout)
+            self.assertIn(f"{len(manifest['profiles'])} 份未生成", stdout)
 
     def test_check_missing_allowed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
