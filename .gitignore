@@ -1,0 +1,42 @@
+# 生成物
+*.generated.*
+
+# 本地节点与订阅：真实 IP、UUID、Reality 密钥、密码不要入库
+profiles/s4.yaml
+profiles/s6.yaml
+profiles/xray_nodes
+profiles/*.local.yaml
+profiles/*.local.yml
+profiles/*.local.json
+profiles/local/
+templates/*.local.json
+.private/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+
+# 环境与密钥
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.key
+credentials.json
+
+# 日志与临时文件
+*.log
+*.tmp
+Thumbs.db
+.DS_Store
+
+# 编辑器
+.idea/
+.vscode/settings.json
+.vscode/launch.json

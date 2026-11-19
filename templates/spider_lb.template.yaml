@@ -1,0 +1,312 @@
+# 修订时间:2026/11/12-14:17
+# 如果是windows系统中的wsl中使用mihomo内核,注意避免和windows主机上的相关程序端口冲突
+# 例如windows上的mihomo客户端占用同一个端口就会导致错误(尤其是启动用mirror网络模式的情况下.)
+mixed-port: 7897 # 按需更改,wsl用户建议更换端口,例如7890
+log-level: info
+# 本配置的爬虫入口全部监听 127.0.0.1,不需要局域网访问;
+# 需要给局域网设备用时:改 true,并补 bind-address 与 authentication,不要只开 allow-lan
+allow-lan: false
+
+ipv6: true
+
+mode: rule
+
+# 外部控制api:默认只允许本机访问(运行mihomo服务的设备自身)
+external-controller: 127.0.0.1:9097
+# 需要局域网面板时才改成 0.0.0.0:9097,并把 secret 换成随机长串(现在这个值只够本机使用)
+secret: '1'
+
+# 供mihomo客户端使用(例如clash-verge等GUI客户端),命名管道不校验 secret,本机进程皆可控制
+external-controller-pipe: \\.\pipe\verge-mihomo
+
+# 允许公网网页访问本机mihomo的api接口(白名单列表),只放行自己实际在用的面板
+external-controller-cors:
+  allow-private-network: true
+  allow-origins:
+  - tauri://localhost
+  - http://tauri.localhost
+  - https://yacd.metacubex.one
+  - https://metacubex.github.io
+  - https://board.zash.run.place
+unified-delay: true
+
+# 记住面板里手动选择的策略组,重启或重载后不会被重置回第一项
+profile:
+  store-selected: true
+
+# tun模式默认关闭
+# 注意:启用前必须先补 dns 段(含 dns.enable);否则 dns-hijack 会把查询交给并不存在的内部DNS,解析直接断
+tun:
+  enable: false
+  stack: gvisor
+  auto-route: true
+  strict-route: false
+  auto-detect-interface: true
+  # dns-hijack:
+  # - any:53
+  # - tcp://any:53
+
+# 定义共用的provider属性组合
+#     <<: *pc
+provider-com: &pc
+  interval: 86400
+  health-check: &pc-health-check
+    enable: true
+    url: https://www.gstatic.com/generate_204
+    interval: 300
+    timeout: 5000
+    expected-status: 204
+
+# 更新机制说明:
+# - interval 是订阅更新周期(秒),http provider 不写 path 时缓存在 <工作目录>/proxies/<url 的md5>
+# - health-check.interval 只是测速节奏,lazy 默认 true,未被使用的节点不会按 300 秒全量测速
+# - 更新节奏、缓存位置、手动触发与新鲜度核验:
+#   mihomo/mihomo@订阅和规则集的自动更新@interval与手动触发@状态核验.md
+proxy-providers:
+  # 在线订阅由 profiles.json 的 subscriptions 生成:增删订阅只改 JSON,不用动模板
+  # 不写 path:缓存按 URL 的 md5 存放,换订阅链接不会沿用旧缓存
+  # 显式指定下载链路:不写时按 rules 的 MATCH 落到 PROXY,写死更可控
+  {{PROXY_PROVIDERS}}
+
+  # 本地节点文件示例（默认不启用）：
+  # 把节点文件放到 profiles/ 下，并在 mihomo 工作目录创建指向 profiles 的符号链接或 Junction（如 myprofiles），
+  # 再按下面的写法启用。file 类型不做下载，改动本地文件即重载，interval 对它不生效。
+  # 自建节点文件包含真实凭据时不要提交到公开仓库（.gitignore 已忽略 profiles/s4.yaml、s6.yaml、xray_nodes）。
+  # s4:
+  #   type: file
+  #   path: ./myprofiles/s4.yaml
+  #   health-check: *pc-health-check
+  # s6:
+  #   type: file
+  #   path: ./myprofiles/s6.yaml
+  #   health-check: *pc-health-check
+
+# 订阅 provider 变更时要同步这里，决定哪些集合真正参与分组。
+# 接入本地节点 provider 后，把 provider 名加到列表末尾。
+use-providers: &up
+  {{USE_PROVIDERS}}
+
+# 订阅默认规则(根据域名和IP等,在线拉取(type:http),每天更新一次)
+# 关键在于url和interval,定期从指定的url中获取订阅,保存位置则定义在path处(位于工作目录下).
+# 规则项目:https://github.com/Loyalsoldier/clash-rules
+# 注意:下载依赖 proxy 指定的代理组;PROXY 若被手动切到空组或 REJECT,更新会静默失败并继续使用旧缓存
+rule-providers:
+  private_domain:
+    type: http
+    behavior: domain
+    format: yaml
+    url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/private.txt"
+    path: ./ruleset/private-domain.yaml
+    interval: 86400
+    proxy: PROXY
+
+  direct_domain:
+    type: http
+    behavior: domain
+    format: yaml
+    url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/direct.txt"
+    path: ./ruleset/direct-domain.yaml
+    interval: 86400
+    proxy: PROXY
+
+  lan_ip:
+    type: http
+    behavior: ipcidr
+    format: yaml
+    url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/lancidr.txt"
+    path: ./ruleset/lan-ip.yaml
+    interval: 86400
+    proxy: PROXY
+
+  cn_ip:
+    type: http
+    behavior: ipcidr
+    format: yaml
+    url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/cncidr.txt"
+    path: ./ruleset/cn-ip.yaml
+    interval: 86400
+    proxy: PROXY
+
+# 机场在节点名称里塞的公告/信息类节点,统一排除
+# 注意:filter 用单引号包裹,YAML 双引号会把 \b 解释成退格符,正则直接失效
+junk-filter: &junk '(?i)(官网|官方|流量|剩余|到期|过期|超时|重启|倍率|定期|刷新|更新|订阅|重置|套餐|试用|expire|traffic|official|website)'
+
+# LB表示Load Balance(负载均衡)
+# 国家过滤用 \b 锚定国家代码,避免 US 撞上 Russia/Australia、DE 撞上 Sweden、TH 撞上 Netherlands 这类子串误匹配
+com_proxy_group: &com_proxy_group
+  type: load-balance
+  use: *up
+  url: https://www.gstatic.com/generate_204
+  # 组级 url 决定 load-balance 用哪份测速结果判断节点存活;provider 自身的 health-check 独立生效
+  interval: 300
+  # round-robin:按连接轮换出口,抓取分散 IP 用
+  # consistent-hashing:同一目标站点固定同一出口,需要保持会话用
+  # sticky-sessions:按源地址+目标保持 10 分钟粘性
+  strategy: {{STRATEGY}}
+  exclude-filter: *junk
+
+proxy-groups:
+  # 基础爬虫出口(手动选择(select))
+  - name: PROXY
+    type: select
+    proxies:
+      - ALL-LB
+      # - 自建-LB  # 接入本地节点并创建自建-LB 组后启用
+      - EU-LB
+      - 美国-LB
+      - 德国-LB
+      - 法国-LB
+      - 英国-LB
+      - 日本-LB
+      - 新加坡-LB
+      - 香港-LB
+      - 台湾-LB
+      - 泰国-LB
+      - 俄罗斯-LB
+      - DIRECT
+      - REJECT
+
+  # 自建节点兜底组示例（默认不启用）：
+  # 接入本地 provider 后取消注释，并把“自建-LB”加回上面的 PROXY 组。
+  # - name: 自建-LB
+  #   type: load-balance
+  #   use: [s4, s6]
+  #   url: https://www.gstatic.com/generate_204
+  #   interval: 300
+  #   strategy: round-robin
+
+  # 下面定义基于国家的代理组(负载均衡)
+  - name: 美国-LB
+    filter: '(?i)(美|美国|美國|洛杉矶|洛杉磯|纽约|紐約|西雅图|西雅圖|圣何塞|聖荷西|硅谷|\bUSA?\b|United ?States|America)' #保留 "美",为了匹配上,"美·凤凰城"这类情况.
+    <<: *com_proxy_group
+
+  - name: 英国-LB
+    filter: '(?i)(英国|英國|伦敦|倫敦|\bUK\b|\bGB\b|United ?Kingdom|Britain|London)'
+    <<: *com_proxy_group
+
+  - name: 泰国-LB
+    filter: '(?i)(泰国|泰國|曼谷|\bTH\b|Thailand|Bangkok)'
+    <<: *com_proxy_group
+
+  - name: 日本-LB
+    filter: '(?i)(日本|东京|東京|大阪|樱花|櫻花|\bJP\b|Japan|Tokyo|Osaka)'
+    <<: *com_proxy_group
+
+  - name: 新加坡-LB
+    filter: '(?i)(新加坡|狮城|獅城|\bSG\b|Singapore)'
+    <<: *com_proxy_group
+
+  - name: 德国-LB
+    filter: '(?i)(德国|德國|法兰克福|柏林|\bDE\b|Germany|Frankfurt)'
+    <<: *com_proxy_group
+
+  - name: 俄罗斯-LB
+    filter: '(?i)(俄罗斯|俄羅斯|莫斯科|\bRU\b|Russia|Moscow|Москва)'
+    <<: *com_proxy_group
+
+  - name: 法国-LB
+    filter: '(?i)(法国|法國|巴黎|\bFR\b|France|Paris)'
+    <<: *com_proxy_group
+
+  - name: 香港-LB
+    filter: '(?i)(香港|\bHK\b|Hong ?Kong)'
+    <<: *com_proxy_group
+
+  - name: 台湾-LB
+    filter: '(?i)(台湾|台灣|臺灣|\bTW\b|Taiwan)'
+    <<: *com_proxy_group
+
+  - name: EU-LB # 包含尤其是欧盟国家节点(欧元)
+    filter: '(?i)(德国|德國|法国|法國|意大利|義大利|西班牙|荷兰|荷蘭|波兰|波蘭|瑞典|瑞士|比利时|比利時|奥地利|爱尔兰|愛爾蘭|\b(DE|FR|IT|ES|NL|PL|SE|CH|BE|AT|IE)\b|Germany|France|Italy|Spain|Netherlands|Poland|Sweden|Frankfurt|Amsterdam|Milan|Madrid|Paris|Vienna|Dublin)'
+    <<: *com_proxy_group
+
+  - name: ALL-LB # 不区分国家,尽可能包含节点(不设 filter)
+    <<: *com_proxy_group
+
+  - name: ALL-SELECT
+    type: select
+    include-all: true
+    exclude-filter: *junk
+    url: https://www.gstatic.com/generate_204
+    interval: 300
+
+# listeners 共用的监听配置
+listener-base: &lp
+  type: mixed
+  listen: 127.0.0.1
+  udp: true
+# port 与国家入口的对应关系只在这里维护;入口名同时出现在日志、/connections 和 rules 的 IN-NAME 里
+# 端口方案:每份 profile 独占一个 100 端口 band(当前 171xx/172xx),band 内 +0=all、+10=eu、+11 起按国家连号(uk 也在其中)
+# 端口按 portEu 递增分配(us=+1 ... uk=+10),由 profiles.json 的 countryOrder 决定
+listeners:
+  - name: crawler-all
+    <<: *lp
+    port: {{PORT_ALL}}
+  - name: crawler-eu
+    <<: *lp
+    port: {{PORT_EU}}
+  - name: crawler-us
+    <<: *lp
+    port: {{PORT_US}}
+  - name: crawler-jp
+    <<: *lp
+    port: {{PORT_JP}}
+  - name: crawler-hk
+    <<: *lp
+    port: {{PORT_HK}}
+  - name: crawler-sg
+    <<: *lp
+    port: {{PORT_SG}}
+  - name: crawler-de
+    <<: *lp
+    port: {{PORT_DE}}
+  - name: crawler-fr
+    <<: *lp
+    port: {{PORT_FR}}
+  - name: crawler-th
+    <<: *lp
+    port: {{PORT_TH}}
+  - name: crawler-ru
+    <<: *lp
+    port: {{PORT_RU}}
+  - name: crawler-tw
+    <<: *lp
+    port: {{PORT_TW}}
+  - name: crawler-uk
+    <<: *lp
+    port: {{PORT_UK}} # 英国入口
+
+rules:
+  # 规则顺序即优先级,越靠上越先生效
+
+  # 私有网络:内网/局域网目标始终直连
+  - RULE-SET,private_domain,DIRECT
+  - RULE-SET,lan_ip,DIRECT,no-resolve
+
+  # 国内域名与国内 IP 直连
+  # no-resolve:纯域名请求不再为了匹配 IP 段去本地解析,避免 DNS 泄漏与首包变慢
+  - RULE-SET,direct_domain,DIRECT
+  - RULE-SET,cn_ip,DIRECT,no-resolve
+
+  # 根据入站名走不同国家出口(比 IN-PORT 稳定,改端口只动 listeners)
+  ## 地区和州际
+  - IN-NAME,crawler-all,ALL-LB
+  - IN-NAME,crawler-eu,EU-LB
+  ## 国家
+  - IN-NAME,crawler-uk,英国-LB
+  - IN-NAME,crawler-us,美国-LB
+  - IN-NAME,crawler-jp,日本-LB
+  - IN-NAME,crawler-hk,香港-LB
+  - IN-NAME,crawler-sg,新加坡-LB
+  - IN-NAME,crawler-de,德国-LB
+  - IN-NAME,crawler-fr,法国-LB
+  - IN-NAME,crawler-th,泰国-LB
+  - IN-NAME,crawler-ru,俄罗斯-LB
+  - IN-NAME,crawler-tw,台湾-LB
+
+  # 兜底策略:其余全部走代理中心
+  - MATCH,PROXY
+
+  # 现状是"混合模式":国内域名/国内 IP 从爬虫端口进来也直连(用本机出口),其余目标才走对应国家组.
+  # 如果要求"这些端口一律用该国 IP、连国内目标也不许直连":
+  # 把 direct_domain / cn_ip 两条下移到 IN-NAME 之后,或直接给 listener 加 proxy: <组名>(此时不走 rules).

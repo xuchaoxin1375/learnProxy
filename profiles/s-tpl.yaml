@@ -1,0 +1,87 @@
+# 不同服务器(vps)搭建的节点有同样的节点名,可以在编辑器中用正则替换:
+# "(\s)name: "替换为 "$1name: si-" (注意空格保留,并且将i替换为编号以区分不同服务器来源.)
+# 注意:
+# 1.后续的rules中的规则引用的分组必须取自proxy-groups数组中定义的名字,否则配置无法通过检查.(例如使用 all 分组来兜底)
+# 2.分组定义中引用的节点名必须在proxies数组中定义.
+# 
+# 添加自定义配置文件夹目录到mihomo内核工作目录中,方便引用,例如:(为自定义配置目录profiles创建位于verge自定义的工作目录下的符号链接myprofiles)
+#  New-Item -ItemType Junction -Target <repo>/profiles -Path ~\AppData\Roaming\io.github.clash-verge-rev.clash-verge-rev\myprofiles
+mixed-port: 7897
+allow-lan: true
+bind-address: "*"
+mode: rule
+log-level: info
+external-controller: "127.0.0.1:9090"
+
+# 建议配置dns规则
+dns:
+    enable: true
+    ipv6: false
+    default-nameserver: [223.5.5.5, 119.29.29.29]
+    enhanced-mode: fake-ip
+    fake-ip-range: 198.18.0.1/16
+    use-hosts: true
+    nameserver:
+        ["https://doh.pub/dns-query", "https://dns.alidns.com/dns-query"]
+    fallback:
+        [
+            "https://doh-pure.onedns.net/dns-query",
+            "https://ada.openbld.net/dns-query",
+            "https://223.5.5.5/dns-query",
+            "https://223.6.6.6/dns-query",
+        ]
+    fallback-filter: { geoip: true, ipcidr: [240.0.0.0/4, 0.0.0.0/32] }
+# 定义节点数组(可以从sub-store中拷贝适用于mihomo的节点定义,勾选格式美化,建议点击预览,这会打开浏览器页面,拷贝其中的yaml配置,粘贴在这个部分.)
+# proxies:....
+
+# 代理组的字段文档: https://wiki.metacubex.one/config/proxy-groups/
+# 定义代理组(手动指定少量节点,名字取自节点定义中的name属性)
+# 注意:
+# 1.后续的rules中的规则引用的分组必须取自proxy-groups数组中定义的名字,否则配置无法通过检查.
+# 2.分组定义中引用的节点名必须在proxies数组中定义.
+proxy-groups:
+    - name: all
+      type: select
+      include-all-proxies: true
+      proxies:
+          - DIRECT
+          - REJECT
+    - name: PROXY
+      type: select
+      proxies:
+          #   - vless-reality
+          #   - 其他节点名...
+
+          # 也可以放入其他的节点名或分组名.
+          # 特殊分组
+          - DIRECT
+          - REJECT
+
+    - name: vless-auto
+      # 将节点名字中带有vless的节点纳入此分组中,并且使用延迟最低的节点.
+      type: url-test
+      # 在节点直接定义在本配置文件中的proxies数组的情况下,使用include-all 配合filter,exclude-filter可以基于正则筛选出需要的节点
+      # 引入当前配置文件 proxies: 下的所有节点
+      include-all-proxies: true
+      # 只保留名称中包含 vless 的节点，(?i) 表示忽略大小写
+      filter: "(?i)vless"
+      exclude-filter: "(?i)warp"
+      # 配置健康检查链接
+      url: "https://www.gstatic.com/generate_204"
+      interval: 300
+      tolerance: 50
+      # 如果没有匹配到任何节点，就回退到 DIRECT
+      empty-fallback: DIRECT
+
+# 最小可用配置不可或缺的rules部分(否则流量可能都走直连,达不到代理效果)
+# rules:
+#   - MATCH,PROXY
+rules:
+    - DOMAIN-SUFFIX,lan,DIRECT
+    - DOMAIN-SUFFIX,local,DIRECT
+    - IP-CIDR,127.0.0.0/8,DIRECT,no-resolve
+    - IP-CIDR,10.0.0.0/8,DIRECT,no-resolve
+    - IP-CIDR,172.16.0.0/12,DIRECT,no-resolve
+    - IP-CIDR,192.168.0.0/16,DIRECT,no-resolve
+    - GEOIP,CN,DIRECT
+    - MATCH,PROXY # 注意检查使用的分组名字是否合法(存在于proxy-groups中定义的某个节点名)

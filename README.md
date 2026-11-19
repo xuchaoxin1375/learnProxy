@@ -1,0 +1,118 @@
+[toc]
+
+## 这个仓库是什么
+
+本仓库是 mihomo（Clash.Meta）的配置与学习工作区，包含三层内容：
+
+- 配置生成：`templates/` 里的模板与 `profiles.json` 生成多份爬虫配置
+- provider 运维：只读检查订阅 / 规则集新鲜度，必要时手动触发更新
+- 学习笔记：`mihomo/` 下的机制说明、排错手册与实测记录
+
+脚本只依赖 Python 3.10+ 标准库，Windows / Linux / macOS 通用。下面命令以仓库根目录为当前目录，Windows 把 `python3` 换成 `python`。
+
+## 快速开始
+
+```bash
+python3 render_profile.py --list        # 看已定义 profile 与产物状态
+python3 render_profile.py --check       # 与模板比对，有差异返回 3
+python3 render_profile.py --dry-run     # 只看会写哪些文件
+python3 render_profile.py               # 渲染全部
+python3 render_profile.py --test --mihomo-home <HomeDir>   # 渲染后跑 mihomo -t
+
+python3 check_provider_status.py --secret '<secret>' --summary
+python3 trigger_provider_update.py <provider> --dry-run
+```
+
+`templates/spider_lb.profiles.json` 里的订阅地址是占位符，使用前替换成你自己的订阅。改了模板或 `profiles.json` 后重新渲染；生成物不会自动同步到 Clash Verge，仍需在 GUI 里重新应用当前 profile。
+
+## 脚本职责
+
+| 路径 | 职责 | 读写行为 |
+| --- | --- | --- |
+| `render_profile.py` | 从模板与 `profiles.json` 渲染 profile，指纹校验，`--list` / `--print` / `--check` / `--test` | 写 `profiles/*.generated.yaml` |
+| `check_provider_status.py` | 检查 proxy-provider / rule-provider 新鲜度、订阅用量、缓存路径 | 只读，仅 `GET` 与本地文件检查 |
+| `trigger_provider_update.py` | 手动触发订阅或规则集更新、单 provider 测速 | 写操作，会真实下载并消耗流量 |
+| `mihomo_provider.py` | 上面脚本共用的 API、运行时定位、缓存路径、输出格式化 | 工具模块，不单独运行 |
+| `tests/` | 渲染状态机、端口校验、provider 解析等单元测试 | 只读，使用标准库 `unittest` |
+
+两个 provider 脚本默认输出竖排明细（含 `path` / `fileExists`），`--summary` 换成汇总表，`--json` 供其他脚本消费。`--all` 属于批量写操作，必须再加 `--yes`，或先用 `--dry-run` 预览。
+
+## 退出码
+
+三个 CLI 脚本使用同一套约定，便于包装成巡检或 CI：
+
+| 退出码 | 含义 | 典型触发 |
+| --- | --- | --- |
+| `0` | 成功 | 渲染完成、检查通过、更新成功 |
+| `1` | 运行或配置解析失败 | API 不可达、模板 / JSON 解析失败、`mihomo -t` 失败、目标更新失败 |
+| `2` | 用法错误 | 参数冲突、缺前置条件、未知目标、参数值不合法 |
+| `3` | 状态差异或需要人工处理 | `--check` 发现差异、产物被手改、provider 过期、`--require-providers` 没有 provider |
+
+`render_profile.py --test` 需要 `--mihomo-home` 或 `MIHOMO_HOME`；缺少时返回 `2`，不会假装校验通过。
+
+## 目录结构
+
+```text
+.
+├─ README.md                  本页，脚本与文档总入口
+├─ LICENSE                    MIT 许可证
+├─ .gitignore                 忽略生成物、本地节点与密钥
+├─ render_profile.py          配置渲染
+├─ check_provider_status.py   只读状态检查
+├─ trigger_provider_update.py 手动更新 / 测速
+├─ mihomo_provider.py         共用工具模块
+├─ ruff.toml                  Python 3.10+ 的 lint 配置
+├─ templates/
+│  ├─ spider_lb.template.yaml 配置正文与占位符
+│  └─ spider_lb.profiles.json 产物差异值与在线订阅
+├─ profiles/                  生成物、示例与本地节点文件
+├─ tests/                     单元测试
+├─ 自建代理节点/              自建节点搭建记录
+└─ mihomo/                    mihomo 学习与运维笔记
+```
+
+`profiles/` 下带 `.generated.yaml` 的文件是脚本产物，已被 `.gitignore` 忽略，不要手改；改模板与 `profiles.json` 后重新渲染。`profiles/` 里另有历史模板与示例（如 `mihomo.template.yaml`、`proxy_full_template.yaml`），当前渲染链路只读 `templates/`，改模板时不要改错目录。
+
+自建节点文件不随仓库提供。需要接回本地节点时，把节点 YAML 放到 `profiles/`（相关文件名已在 `.gitignore` 中），再按 `templates/spider_lb.template.yaml` 里的注释示例启用本地 provider，最后在 GUI 里重新应用配置。模板与示例文件里的 IP、UUID、Reality 密钥与密码都只是占位示例。
+
+## 文档入口
+
+| 想了解 | 先看 |
+| --- | --- |
+| 所有 mihomo 笔记的按任务索引 | [mihomo/README.md](./mihomo/README.md) |
+| 模板、`profiles.json`、端口方案、渲染与校验 | [mihomo@配置模板与生成物@render-profile渲染与校验](./mihomo/mihomo@配置模板与生成物@render-profile渲染与校验.md) |
+| 订阅多久更新、缓存在哪、怎么手动触发 | [mihomo@订阅和规则集的自动更新@interval与手动触发@状态核验](./mihomo/mihomo@订阅和规则集的自动更新@interval与手动触发@状态核验.md) |
+| 改了配置却没生效 | [mihomo@配置读取机制和配置文件的布局](./mihomo/mihomo@配置读取机制和配置文件的布局.md) |
+| 面板连不上、端口冲突、服务起不来 | [mihomo@运行状态检查@日志和故障排查@端口冲突问题](./mihomo/mihomo@运行状态检查@日志和故障排查@端口冲突问题.md) |
+| 用 API 或脚本控制内核 | [mihomo@api指南](./mihomo/mihomo@api指南.md) |
+| 自建节点搭建记录 | [自建代理节点/一键搭建节点proxy.md](./自建代理节点/一键搭建节点proxy.md) |
+
+各脚本的 `--help` 也列了参数默认值、互斥关系与退出码，可以先用它查当前版本支持什么。
+
+## 数据与安全
+
+- 本仓库按公开仓库组织：`templates/spider_lb.profiles.json` 只保留占位订阅地址，真实订阅、节点 IP、UUID、Reality 密钥和密码不要提交。
+- 如果曾把真实凭据提交到公开仓库，先轮换订阅地址和节点密钥；删除文件或清理历史不等于凭据已经安全。
+- 模板默认 `external-controller: 127.0.0.1:9097` 与 `secret: '1'`，只适合本机使用。需要局域网面板时，同时改监听地址和 secret，不要只开 `allow-lan`。
+- `--secret ''` 表示不带鉴权头；不传时才回落到 `MIHOMO_SECRET`，最后才是模板默认值。
+- `trigger_provider_update.py` 每次 update 都会真实下载订阅或规则集，批量执行前先用 `--dry-run` 看清单。
+
+## 开发与验证
+
+```bash
+python3 -m unittest discover -s tests          # 43 个单元测试
+ruff check .
+pyright render_profile.py mihomo_provider.py check_provider_status.py trigger_provider_update.py tests
+```
+
+当前没有配置 CI；提交前至少跑一遍上面的测试与 `python3 render_profile.py --check`。
+
+## 许可证
+
+MIT，见 [LICENSE](./LICENSE)。
+
+## 不适用场景
+
+- 不负责安装 mihomo、Clash Verge 或机场订阅，只处理已经存在的配置与运行态。
+- 不把生成物自动推送到 GUI；应用配置仍需在客户端里完成。
+- 不是订阅计费工具，`subscriptionInfo` 只反映订阅响应头里的用量，不是实时账单。
