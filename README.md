@@ -102,7 +102,7 @@ python3 render_profile.py --manifest ~/Desktop/spider_lb.profiles.local.json
 
 ## 后台服务模式：多实例负载均衡
 
-负载均衡默认由 `mihomo_instance.py` 以独立后台实例管理，不依赖切换 Clash Verge profile。每份 profile 有自己的管理端口和入口 band，可以同时运行：
+负载均衡默认由 `mihomo_instance.py` 以独立后台实例管理，不依赖切换 Clash Verge profile。每份 profile 有自己的管理端口和入口 band，可以同时运行。完整操作见[后台服务多实例：启动、状态、停止](mihomo/mihomo@后台服务多实例@启动状态停止.md)。
 
 | 实例 | 管理端口 | 业务入口 | 策略 | 典型用途 |
 | --- | --- | --- | --- | --- |

@@ -271,7 +271,7 @@ proxy-providers:
 
 ## 多实例启动
 
-先渲染目标 profile，再用 `mihomo_instance.py` 校验和启动；每个实例用独立 `--home`，不要和 Clash Verge 共用：
+先渲染目标 profile，再用 `mihomo_instance.py` 校验和启动；每个实例用独立 `--home`，不要和 Clash Verge 共用。完整操作清单见[后台服务多实例：启动、状态、停止](./mihomo@后台服务多实例@启动状态停止.md)。
 
 ```bash
 # A：171xx 轮询
