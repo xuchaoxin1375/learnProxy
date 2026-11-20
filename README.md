@@ -26,7 +26,7 @@ python3 render_profile.py --test --mihomo-home <HomeDir> --mihomo <mihomo>   # �
 
 python3 mihomo_instance.py validate --config <config.yaml> --mihomo <mihomo>
 python3 mihomo_instance.py start --config <config.yaml> --home <实例目录> --mihomo <mihomo> --verify
-python3 mihomo_instance.py list --root <实例根目录>
+python3 mihomo_instance.py list --root <实例根目录> --ports --verify
 python3 mihomo_instance.py status --home <实例目录> --verify
 python3 mihomo_instance.py stop --home <实例目录>
 
@@ -59,7 +59,7 @@ python3 render_profile.py --manifest ~/Desktop/spider_lb.profiles.local.json
 | 路径 | 职责 | 读写行为 |
 | --- | --- | --- |
 | `render_profile.py` | 从模板与 `profiles.json`（或 `--manifest` 指定的本地清单）渲染 profile，指纹校验，`--manifest` / `--list` / `--print` / `--check` / `--test`（可配 `--mihomo`） | 默认写 `~/Desktop/mihomo-profiles/*.generated.yaml`；无桌面目录时回退 `~/mihomo-profiles` |
-| `mihomo_instance.py` | 校验、启动、列出、查看和停止独立 mihomo 实例；`start/status --verify` 短查控制 API 与 provider；PID 文件与日志落在实例目录 | 写实例目录；只停自己 PID 文件记录的进程，不按进程名清理 |
+| `mihomo_instance.py` | 校验、启动、列出、查看和停止独立 mihomo 实例；`start/status/list --verify` 短查控制 API 与 provider，`list --ports` 显示 mixed/controller/listeners；PID 文件与日志落在实例目录 | 写实例目录；只停自己 PID 文件记录的进程，不按进程名清理 |
 | `check_provider_status.py` | 检查 proxy-provider / rule-provider 新鲜度、订阅用量、缓存路径 | 只读，仅 `GET` 与本地文件检查 |
 | `trigger_provider_update.py` | 手动触发订阅或规则集更新、单 provider 测速 | 写操作，会真实下载并消耗流量 |
 | `mihomo_provider.py` | 上面脚本共用的 API、运行时定位、缓存路径、输出格式化 | 工具模块，不单独运行 |
@@ -76,7 +76,7 @@ python3 render_profile.py --manifest ~/Desktop/spider_lb.profiles.local.json
 | `0` | 成功 | 渲染完成、检查通过、更新成功 |
 | `1` | 运行或配置解析失败 | API 不可达、模板 / JSON 解析失败、`mihomo -t` 失败、目标更新失败 |
 | `2` | 用法错误 | 参数冲突、缺前置条件、未知目标、参数值不合法 |
-| `3` | 状态差异或需要人工处理 | `--check` 发现差异、产物被手改、未生成（除非加 `--allow-missing`）、provider 过期、`--require-providers` 没有 provider、`status/start --verify` 未通过 |
+| `3` | 状态差异或需要人工处理 | `--check` 发现差异、产物被手改、未生成（除非加 `--allow-missing`）、provider 过期、`--require-providers` 没有 provider、`start/status/list --verify` 未通过 |
 
 `render_profile.py --test` 需要 `--mihomo-home` 或 `MIHOMO_HOME`；缺少时返回 `2`，不会假装校验通过。mihomo 二进制用 `--mihomo` 指定，或设置 `MIHOMO_BIN`，或放进 PATH（`mihomo`/`verge-mihomo`）。
 

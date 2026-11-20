@@ -60,7 +60,7 @@ python -X utf8 "$Repo\mihomo_instance.py" start `
   --config "$Profiles\spider_lb_ch.generated.yaml" `
   --home "$Root\ch" --mihomo $Mihomo --verify
 
-python -X utf8 "$Repo\mihomo_instance.py" list --root $Root
+python -X utf8 "$Repo\mihomo_instance.py" list --root $Root --ports --verify
 ```
 
 Linux/macOS：
@@ -86,7 +86,7 @@ python3 "$REPO/mihomo_instance.py" start \
   --config "$PROFILES/spider_lb_ch.generated.yaml" \
   --home "$ROOT/ch" --mihomo "$MIHOMO" --verify
 
-python3 "$REPO/mihomo_instance.py" list --root "$ROOT"
+python3 "$REPO/mihomo_instance.py" list --root "$ROOT" --ports --verify
 ```
 
 没有 `mihomo` 在 PATH 时，`--mihomo` 是显式入口；也可以设置 `MIHOMO_BIN`。`render_profile.py --test` 同样接受 `--mihomo`。
@@ -95,6 +95,7 @@ python3 "$REPO/mihomo_instance.py" list --root "$ROOT"
 
 Windows 用 `curl.exe`，Linux/macOS 用 `curl`；下面的 `--noproxy '*'` 两边都适用。
 
+- `mihomo_instance.py list --root <实例根目录> --ports --verify`：一次看全部实例的 mixed/controller/listeners 与 provider 健康；任一未通过返回 3。
 - `mihomo_instance.py status --home <实例目录> --verify`：应看到 API 版本和 proxy provider 节点数；空 provider 或 API 不可达会返回 3。
 - 控制器：`curl --noproxy '*' -H "Authorization: Bearer 1" http://127.0.0.1:18997/version`（A）或 `19097`（B）。
 - 节点：`curl --noproxy '*' -H "Authorization: Bearer 1" http://127.0.0.1:19097/providers/proxies`，确认订阅 provider 不是空数组。

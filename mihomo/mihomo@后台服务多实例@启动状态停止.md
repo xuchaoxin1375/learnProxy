@@ -93,11 +93,13 @@ python -X utf8 mihomo_instance.py start `
 
 ## 查看状态
 
-一次看全部：
+一次看全部（含端口与健康检查）：
 
 ```powershell
-python -X utf8 mihomo_instance.py list --root "$env:USERPROFILE\mihomo-sticky"
+python -X utf8 mihomo_instance.py list --root "$env:USERPROFILE\mihomo-sticky" --ports --verify
 ```
+
+`--ports` 显示每个实例的 mixed、controller 与 listeners；`--verify` 对运行中的实例短查 API 与 provider，任一未通过返回 3。加 `--json` 供脚本消费。
 
 看单个：
 

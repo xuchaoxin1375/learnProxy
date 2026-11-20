@@ -147,6 +147,55 @@ class ControllerTests(unittest.TestCase):
             self.assertIn("API 验证失败: boom", messages)
 
 
+class InstancePortsTests(unittest.TestCase):
+    def test_read_instance_ports(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Path(tmp) / "config.yaml"
+            config.write_text(
+                "mixed-port: 17897\n"
+                "external-controller: 127.0.0.1:19097\n"
+                "listeners:\n"
+                "  - name: crawler-all\n"
+                "    type: mixed\n"
+                "    port: 17200\n"
+                "    proxy: ALL-LB\n"
+                "  - name: crawler-us\n"
+                "    type: mixed\n"
+                "    port: 17211\n",
+                encoding="utf-8",
+            )
+            ports = mi.read_instance_ports(config)
+            self.assertEqual(ports["mixed"], "17897")
+            self.assertEqual(ports["controller"], "127.0.0.1:19097")
+            self.assertEqual(ports["listeners"][0]["name"], "crawler-all")
+            self.assertEqual(ports["listeners"][1]["port"], 17211)
+
+    def test_list_ports_cli(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            instance = root / "robin"
+            instance.mkdir()
+            config = instance / "config.yaml"
+            config.write_text(
+                "mixed-port: 17797\n"
+                "external-controller: 127.0.0.1:18997\n"
+                "listeners:\n"
+                "  - name: crawler-us\n"
+                "    port: 17111\n",
+                encoding="utf-8",
+            )
+            (instance / "mihomo.pid").write_text(
+                json.dumps({"pid": 999999, "config": str(config), "home": str(instance)}),
+                encoding="utf-8",
+            )
+            with mock.patch.object(mi, "process_alive", return_value=False):
+                code, stdout, _ = run_main(["list", "--root", tmp, "--ports"])
+            self.assertEqual(code, mi.EXIT_STATE)
+            self.assertIn("robin: 已停止", stdout)
+            self.assertIn("mixed 17797", stdout)
+            self.assertIn("crawler-us:17111", stdout)
+
+
 class CommandTests(unittest.TestCase):
     def test_instance_command(self) -> None:
         home = Path(tempfile.gettempdir()) / "home"
@@ -170,8 +219,11 @@ class CommandTests(unittest.TestCase):
         parser = mi.build_parser()
         start = parser.parse_args(["start", "--config", "x", "--home", "y", "--verify"])
         status = parser.parse_args(["status", "--home", "y", "--verify"])
+        listing = parser.parse_args(["list", "--ports", "--verify"])
         self.assertTrue(start.verify)
         self.assertTrue(status.verify)
+        self.assertTrue(listing.ports)
+        self.assertTrue(listing.verify)
 
 
 class CliTests(unittest.TestCase):

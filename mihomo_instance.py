@@ -3,8 +3,9 @@
 
 用于在同一台机器上额外运行一个 mihomo 内核。例如 Clash Verge 继续跑
 171xx 的 round-robin，本脚本管理的实例跑 172xx/173xx 的粘性配置。
-`start --verify` / `status --verify` 会短查控制 API 与 proxy provider，
-节点为空或 provider 异常时返回状态码 3（进程保留）。
+`start --verify` / `status --verify` / `list --verify` 会短查控制 API 与
+proxy provider，节点为空或 provider 异常时返回状态码 3（进程保留）；
+`list --ports` 显示 mixed/controller/listeners。
 
 脚本只操作自己通过 PID 文件记录的进程，不按进程名或端口批量清理。
 
@@ -140,6 +141,75 @@ def read_controller(config: Path) -> tuple[str | None, str | None]:
         if match:
             secret = clean_scalar(match.group(1))
     return controller, secret
+
+
+def read_instance_ports(config: Path) -> dict[str, Any]:
+    """读 mixed-port、external-controller 与 listeners；只用于 list --ports。"""
+    result: dict[str, Any] = {"mixed": None, "controller": None, "listeners": []}
+    if not config.is_file():
+        return result
+    try:
+        text = config.read_text(encoding="utf-8-sig", errors="replace")
+    except OSError:
+        return result
+    result["controller"] = read_controller(config)[0]
+    in_listeners = False
+    item: dict[str, Any] | None = None
+    for raw in text.splitlines():
+        if not raw:
+            continue
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = len(raw) - len(raw.lstrip())
+        if indent == 0:
+            match = re.match(r"^mixed-port\s*:\s*(.*)$", raw)
+            if match:
+                result["mixed"] = clean_scalar(match.group(1)) or None
+                continue
+            if re.match(r"^listeners\s*:\s*$", raw):
+                in_listeners = True
+                continue
+            in_listeners = False
+            continue
+        if not in_listeners:
+            continue
+        match = re.match(r"^-\s+name\s*:\s*(.*)$", stripped)
+        if match:
+            if item:
+                result["listeners"].append(item)
+            item = {"name": clean_scalar(match.group(1))}
+            continue
+        if item is None:
+            continue
+        match = re.match(r"^(port|type|proxy)\s*:\s*(.*)$", stripped)
+        if not match:
+            continue
+        key, value = match.group(1), clean_scalar(match.group(2))
+        if key == "port":
+            try:
+                item["port"] = int(value)
+            except ValueError:
+                item["port"] = value
+        else:
+            item[key] = value
+    if item:
+        result["listeners"].append(item)
+    return result
+
+
+def format_instance_ports(ports: dict[str, Any]) -> str:
+    """一行描述 mixed/controller/listeners，供 list --ports 使用。"""
+    mixed = ports.get("mixed") or "-"
+    controller = ports.get("controller") or "-"
+    listeners = ports.get("listeners") or []
+    if listeners:
+        shown = ", ".join(f"{one.get('name')}:{one.get('port')}" for one in listeners[:3])
+        if len(listeners) > 3:
+            shown += f" … 共 {len(listeners)} 个"
+    else:
+        shown = "-"
+    return f"mixed {mixed} / controller {controller}; listeners {shown}"
 
 
 def verify_config(config: Path, timeout: float = 3.0) -> tuple[bool, list[str]]:
@@ -503,17 +573,21 @@ def cmd_list(args: argparse.Namespace) -> int:
         if not data:
             continue
         pid = data["pid"]
-        entries.append(
-            {
-                "name": pid_file.parent.name,
-                "pid": pid,
-                "running": process_alive(pid),
-                "config": data.get("config", ""),
-                "home": data.get("home", ""),
-                "log": data.get("log", ""),
-                "pid_file": str(pid_file),
-            }
-        )
+        config = Path(str(data.get("config", ""))).expanduser()
+        entry = {
+            "name": pid_file.parent.name,
+            "pid": pid,
+            "running": process_alive(pid),
+            "config": data.get("config", ""),
+            "home": data.get("home", ""),
+            "log": data.get("log", ""),
+            "pid_file": str(pid_file),
+            "ports": read_instance_ports(config),
+        }
+        if args.verify and entry["running"]:
+            ok, messages = verify_config(config)
+            entry["verify"] = {"ok": ok, "messages": messages}
+        entries.append(entry)
     if args.json:
         print(json.dumps(entries, ensure_ascii=False, indent=2))
     elif not entries:
@@ -524,7 +598,19 @@ def cmd_list(args: argparse.Namespace) -> int:
             print(f"{entry['name']}: {state}, PID {entry['pid']}")
             print(f"  配置: {entry['config']}")
             print(f"  工作目录: {entry['home']}")
-    return EXIT_OK if any(entry["running"] for entry in entries) else EXIT_STATE
+            if args.ports:
+                print(f"  {format_instance_ports(entry['ports'])}")
+            if entry.get("verify"):
+                for message in entry["verify"]["messages"]:
+                    print(f"  [验证] {message}")
+                if not entry["verify"]["ok"]:
+                    print("  [验证未通过] 见上面的空 provider / API 提示")
+    running = [entry for entry in entries if entry["running"]]
+    if not running:
+        return EXIT_STATE
+    if args.verify and any(entry.get("verify") and not entry["verify"]["ok"] for entry in running):
+        return EXIT_STATE
+    return EXIT_OK
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -540,7 +626,7 @@ def build_parser() -> argparse.ArgumentParser:
             "示例:\n"
             "  python mihomo_instance.py validate --config ./config.yaml --mihomo /path/to/mihomo\n"
             "  python mihomo_instance.py start --config ./config.yaml --home ./runtime --mihomo /path/to/mihomo --verify\n"
-            "  python mihomo_instance.py list --root ./runtime\n"
+            "  python mihomo_instance.py list --root ./runtime --ports --verify\n"
             "  python mihomo_instance.py status --home ./runtime --verify\n"
             "  python mihomo_instance.py stop --home ./runtime"
         ),
@@ -599,6 +685,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--root",
         default="~/mihomo-sticky",
         help="实例根目录，默认 ~/mihomo-sticky；扫描 <root>/*/mihomo.pid",
+    )
+    p_list.add_argument("--ports", action="store_true", help="显示 mixed/controller/listeners")
+    p_list.add_argument(
+        "--verify",
+        action="store_true",
+        help="对运行中的实例短查控制 API 与 provider；任一未通过返回 3",
     )
     p_list.add_argument("--json", action="store_true", help="输出 JSON")
     return parser
