@@ -442,6 +442,7 @@ def cmd_start(args: argparse.Namespace) -> int:
         busy = check_ports(config)
         if busy:
             detail = ", ".join(f"{item['label']}={item['port']}" for item in busy)
+            sys.stdout.flush()
             print(f"端口已被占用: {detail}", file=sys.stderr)
             print(
                 "先停止占用进程，或改配置/清单里的端口；确需跳过检查加 --skip-port-check",
