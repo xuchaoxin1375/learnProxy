@@ -106,7 +106,7 @@ Windows 用 `curl.exe`，Linux/macOS 用 `curl`；下面的 `--noproxy '*'` 两�
 - **A：`spider_lb_robin`（171xx）**：`round-robin`，按连接轮换出口。适合 429、公开 JSON、多连接下载等不需要会话一致性的任务。
 - **B：`spider_lb_ch`（172xx）**：`consistent-hashing`，同一目标稳定到同一出口。适合反爬、需要稳定 IP 的站点。
 - **C：`spider_lb_sticky`（173xx）**：`sticky-sessions`，同一来源 + 目标保持约 10 分钟。适合登录态、购物车、验证码流程。
-- `17100/17200/17300` 是不分国家的 all 入口；`17111/17211/17311` 等国家入口来自 `listeners`，具体映射以渲染后的配置为准。
+- `17100/17200/17300` 是不分国家的 all 入口；`17111/17211/17311` 等国家入口来自 `listeners`。默认顺序是 us/jp/hk/sg/de/fr/th/ru/tw/uk，所以 `+11` 通常是美国；具体映射以清单的 `countryOrder` 和渲染后的配置为准。
 
 `round-robin` 不保证每个请求都换 IP；节点池太小或连接复用都会让观察结果看起来“没变”。需要验证时多做几次独立请求，并确认节点池有足够可用节点。
 
@@ -127,4 +127,4 @@ python -X utf8 mihomo_instance.py stop --home "$env:USERPROFILE\mihomo-sticky\ch
 python -X utf8 mihomo_instance.py stop --home "$env:USERPROFILE\mihomo-sticky\sticky"
 ```
 
-确认实例停止后，按需删除 `mihomo-sticky` 下的实例目录、桌面生成物和 provider 缓存。不要删除 Clash Verge 自己的工作目录；`mihomo_instance.py` 只管理自己 PID 文件记录的进程。
+确认实例停止后，按需删除 `mihomo-sticky` 下的实例目录、桌面生成物和 provider 缓存；Linux/macOS 用 `rm -rf` 删对应目录。不要删除 Clash Verge 自己的工作目录；`mihomo_instance.py` 只管理自己 PID 文件记录的进程。

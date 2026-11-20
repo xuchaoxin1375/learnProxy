@@ -131,6 +131,8 @@ python -X utf8 check_provider_status.py --api http://127.0.0.1:18997 --secret 1 
 python -X utf8 check_provider_status.py --api http://127.0.0.1:19097 --secret 1 --summary
 ```
 
+`secret` 以运行时配置为准；模板默认是 `1`，改过就换成实际值。`--api` 必须指向对应实例的 controller，不能统一用 9097。
+
 检查出口：
 
 ```powershell

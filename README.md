@@ -117,7 +117,7 @@ python3 render_profile.py --manifest ~/Desktop/spider_lb.profiles.local.json
 | B：`spider_lb_sticky` | `17997` / `19197` | `173xx` | `sticky-sessions` | 10 分钟会话粘性；按需使用 |
 | GUI：雪山 Link 等 | `7897` / `9097` | 无 | 日常 | 日常浏览，不承载采集负载均衡 |
 
-`17797/17897/17997` 是爬虫用的 mixed 入口，`18997/19097/19197` 是控制 API；不要把 controller 填进 `HTTP_PROXY`，也不要把 mixed 当控制口查 `/version`。
+`17797/17897/17997` 是爬虫用的 mixed 入口，`18997/19097/19197` 是控制 API；不要把 controller 填进 `HTTP_PROXY`，也不要把 mixed 当控制口查 `/version`。`171xx/172xx/173xx` 是 listeners 端口段：`+0` 是 all，`+10` 是 eu，`+11` 起按国家连号，具体映射见[配置模板文档](mihomo/mihomo@配置模板与生成物@render-profile渲染与校验.md#端口编号方案)。
 
 - 默认启动 A + B；173xx 按需再启动。三份都有独立 mixed 与 controller，模板不再写 `external-controller-pipe`，可以同时运行。
 - `default.generated.yaml` 仍是 GUI/legacy 的 171xx + 7897/9097；不要把它当后台服务启动，会和 A 的 171xx 撞。如果切回 GUI 的 `default.generated.yaml`，也先停 `spider_lb_robin`。
