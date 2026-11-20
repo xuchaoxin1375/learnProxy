@@ -115,7 +115,7 @@ Windows 用 `curl.exe`，Linux/macOS 用 `curl`；下面的 `--noproxy '*'` 两�
 
 - **`render_profile.py --test` 报找不到 mihomo**：加 `--mihomo <路径>`，或设置 `MIHOMO_BIN`；也可以改用 `mihomo_instance.py validate --mihomo`。
 - **`start` 显示已启动但节点为空**：用 `status --verify` 复测；看日志里的 `online-sub1 ... 404/timeout`，检查订阅 URL、网络与 provider 的 `filter`。`--verify` 返回 3 表示进程在跑但健康检查未通过。
-- **端口占用**：`default.generated.yaml` 和 A 都使用 `171xx`，已有 Clash Verge 时不要启动 `default`；A/B/C 的 mixed 与 controller 也必须各自唯一。
+- **端口占用**：`start` 会预检 mixed、controller 与 listeners，冲突时点名端口且不写 PID；确认 `default.generated.yaml` 和 A 没有同时启动（都用 `171xx`），A/B/C 的 mixed 与 controller 也必须各自唯一。确需跳过预检用 `--skip-port-check`。
 - **mixed 与 controller 混用**：`17797/17897/17997` 是爬虫入口，`18997/19097/19197` 是控制 API；不要把 controller 填进 `HTTP_PROXY`。
 - **规则集或 Geo 数据下载失败**：首次启动可能需要下载 jsDelivr 规则集与 Geo 数据；国内网络不稳时按[GeoX 文档](./Geox@GeoIP@Geosite.md)准备缓存或调整下载代理。
 - **改订阅后仍是旧节点**：重新渲染并重启对应实例；不要只改 `*.generated.yaml`。

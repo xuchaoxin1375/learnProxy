@@ -197,7 +197,7 @@ python -X utf8 render_profile.py `
 
 | 现象 | 先查 |
 | --- | --- |
-| `start` 报端口占用 | 用上面的端口命令看 171xx/172xx/173xx/controller；A 和 `default` 都用 171xx |
+| `start` 报端口已被占用 | 按报错里的端口停掉占用进程；确认 A 与 `default` 没有同时启动；`list --ports` 可看每个实例的端口 |
 | `status` 显示已退出 | 看实例目录下的 `mihomo.log` 末尾；PID 文件会保留，`stop` 会清理过期 PID |
 | 实例运行但节点为空 | `status --home ... --verify`；或按实例跑 `check_provider_status.py --api http://127.0.0.1:<control> --secret 1`；检查私有清单 URL、网络与 filter |
 | 改订阅后仍用旧节点 | 重新渲染并重启实例；不要只改生成的 YAML |

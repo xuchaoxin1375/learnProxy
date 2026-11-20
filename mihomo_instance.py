@@ -3,6 +3,7 @@
 
 用于在同一台机器上额外运行一个 mihomo 内核。例如 Clash Verge 继续跑
 171xx 的 round-robin，本脚本管理的实例跑 172xx/173xx 的粘性配置。
+`start` 启动前会检查 mixed/controller/listeners 端口，冲突时直接报出端口；
 `start --verify` / `status --verify` / `list --verify` 会短查控制 API 与
 proxy provider，节点为空或 provider 异常时返回状态码 3（进程保留）；
 `list --ports` 显示 mixed/controller/listeners。
@@ -21,6 +22,7 @@ import os
 import re
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -210,6 +212,35 @@ def format_instance_ports(ports: dict[str, Any]) -> str:
     else:
         shown = "-"
     return f"mixed {mixed} / controller {controller}; listeners {shown}"
+
+
+def check_ports(config: Path, timeout: float = 0.2) -> list[dict[str, Any]]:
+    """启动前检查 mixed/controller/listeners 是否已被占用。
+
+    只查 127.0.0.1 的 TCP；配置通常绑定回环。端口在监听就视为冲突，
+    不管占用者是谁；确需跳过时用 start --skip-port-check。
+    """
+    info = read_instance_ports(config)
+    candidates: list[tuple[str, Any]] = []
+    if info.get("mixed"):
+        candidates.append(("mixed", info["mixed"]))
+    controller = str(info.get("controller") or "")
+    if ":" in controller and not controller.startswith(("unix:", "/", "\\\\")):
+        candidates.append(("controller", controller.rsplit(":", 1)[-1]))
+    for item in info.get("listeners") or []:
+        if item.get("port"):
+            candidates.append((f"listener:{item.get('name')}", item["port"]))
+    busy: list[dict[str, Any]] = []
+    for label, raw_port in candidates:
+        try:
+            port = int(raw_port)
+        except (TypeError, ValueError):
+            continue
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(timeout)
+            if sock.connect_ex(("127.0.0.1", port)) == 0:
+                busy.append({"label": label, "port": port})
+    return busy
 
 
 def verify_config(config: Path, timeout: float = 3.0) -> tuple[bool, list[str]]:
@@ -406,6 +437,17 @@ def cmd_start(args: argparse.Namespace) -> int:
     if run_validate(mihomo, home, config) != 0:
         print("配置校验失败，未启动", file=sys.stderr)
         return EXIT_ERROR
+
+    if not args.skip_port_check:
+        busy = check_ports(config)
+        if busy:
+            detail = ", ".join(f"{item['label']}={item['port']}" for item in busy)
+            print(f"端口已被占用: {detail}", file=sys.stderr)
+            print(
+                "先停止占用进程，或改配置/清单里的端口；确需跳过检查加 --skip-port-check",
+                file=sys.stderr,
+            )
+            return EXIT_ERROR
 
     log_file.parent.mkdir(parents=True, exist_ok=True)
     with log_file.open("ab") as log_handle:
@@ -658,6 +700,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_start.add_argument("--pid-file", help="默认 <home>/mihomo.pid")
     p_start.add_argument("--log", help="默认 <home>/mihomo.log")
     p_start.add_argument("--dry-run", action="store_true", help="只打印命令，不校验、不启动")
+    p_start.add_argument(
+        "--skip-port-check",
+        action="store_true",
+        help="跳过启动前的 mixed/controller/listeners 端口占用检查",
+    )
     p_start.add_argument(
         "--verify",
         action="store_true",

@@ -4,6 +4,7 @@ import contextlib
 import io
 import json
 import os
+import socket
 import sys
 import tempfile
 import unittest
@@ -170,6 +171,20 @@ class InstancePortsTests(unittest.TestCase):
             self.assertEqual(ports["listeners"][0]["name"], "crawler-all")
             self.assertEqual(ports["listeners"][1]["port"], 17211)
 
+    def test_check_ports_detects_bound_mixed_port(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+                listener.bind(("127.0.0.1", 0))
+                listener.listen(1)
+                port = listener.getsockname()[1]
+                config = Path(tmp) / "config.yaml"
+                config.write_text(
+                    f"mixed-port: {port}\nexternal-controller: 127.0.0.1:1\n",
+                    encoding="utf-8",
+                )
+                busy = mi.check_ports(config)
+            self.assertEqual(busy, [{"label": "mixed", "port": port}])
+
     def test_list_ports_cli(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -218,9 +233,11 @@ class CommandTests(unittest.TestCase):
     def test_verify_flags_parse(self) -> None:
         parser = mi.build_parser()
         start = parser.parse_args(["start", "--config", "x", "--home", "y", "--verify"])
+        skip = parser.parse_args(["start", "--config", "x", "--home", "y", "--skip-port-check"])
         status = parser.parse_args(["status", "--home", "y", "--verify"])
         listing = parser.parse_args(["list", "--ports", "--verify"])
         self.assertTrue(start.verify)
+        self.assertTrue(skip.skip_port_check)
         self.assertTrue(status.verify)
         self.assertTrue(listing.ports)
         self.assertTrue(listing.verify)
