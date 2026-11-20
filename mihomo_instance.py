@@ -3,6 +3,8 @@
 
 用于在同一台机器上额外运行一个 mihomo 内核。例如 Clash Verge 继续跑
 171xx 的 round-robin，本脚本管理的实例跑 172xx/173xx 的粘性配置。
+`start --verify` / `status --verify` 会短查控制 API 与 proxy provider，
+节点为空或 provider 异常时返回状态码 3（进程保留）。
 
 脚本只操作自己通过 PID 文件记录的进程，不按进程名或端口批量清理。
 
@@ -15,6 +17,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -29,8 +32,13 @@ from mihomo_provider import (
     EXIT_OK,
     EXIT_STATE,
     EXIT_USAGE,
+    ApiError,
+    ConfigError,
+    api_base,
+    api_headers,
     configure_stdout,
     decode_output,
+    request_json,
 )
 
 START_WAIT_SECONDS = 1.5
@@ -98,6 +106,90 @@ def find_mihomo(explicit: str | None) -> str:
         "找不到 mihomo 可执行文件；用 --mihomo 指定，或设置 MIHOMO_BIN。"
         "Windows 常见位置：C:\\Program Files\\Clash Verge\\verge-mihomo.exe"
     )
+
+
+def clean_scalar(value: str) -> str:
+    """去掉 YAML 标量两侧引号与行尾注释，够读 controller/secret 即可。"""
+    text = value.strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in ("'", '"'):
+        return text[1:-1]
+    return text.split(" #", 1)[0].strip()
+
+
+def read_controller(config: Path) -> tuple[str | None, str | None]:
+    """从运行时配置读 external-controller 与 secret；不解析命名管道。"""
+    if not config.is_file():
+        return None, None
+    try:
+        text = config.read_text(encoding="utf-8-sig", errors="replace")
+    except OSError:
+        return None, None
+    controller = None
+    secret = None
+    for raw in text.splitlines():
+        if not raw or raw[0].isspace():
+            continue
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        match = re.match(r"^external-controller\s*:\s*(.*)$", line)
+        if match:
+            controller = clean_scalar(match.group(1)) or None
+            continue
+        match = re.match(r"^secret\s*:\s*(.*)$", line)
+        if match:
+            secret = clean_scalar(match.group(1))
+    return controller, secret
+
+
+def verify_config(config: Path, timeout: float = 3.0) -> tuple[bool, list[str]]:
+    """短查控制 API 与 proxy provider；只读，不切换节点。
+
+    返回 (是否健康, 人类可读消息)。节点数为 0 时判为不健康，
+    因为多实例负载均衡没有节点就没有意义；实例本身可能仍在运行。
+    """
+    controller, secret = read_controller(config)
+    if not controller:
+        return False, ["配置没有 external-controller，无法验证 API（命名管道控制口不在本检查内）"]
+    base = api_base(controller if "://" in controller else f"http://{controller}")
+    headers = api_headers(secret)
+    try:
+        _, version = request_json(base, "/version", headers, timeout)
+        _, providers = request_json(base, "/providers/proxies", headers, timeout)
+    except (ApiError, ConfigError, OSError) as exc:
+        return False, [f"API 验证失败: {exc}"]
+
+    messages = [f"API {controller} 可用，内核 {(version or {}).get('version', '?')}"]
+    rows = (providers or {}).get("providers") if isinstance(providers, dict) else {}
+    rows = rows or {}
+    total = 0
+    empty: list[str] = []
+    for name, item in rows.items():
+        if not isinstance(item, dict):
+            continue
+        proxies = item.get("proxies") or []
+        total += len(proxies)
+        if not proxies:
+            empty.append(str(name))
+    messages.append(f"proxy provider {len(rows)} 个，节点 {total} 个")
+    if empty:
+        messages.append("空 provider: " + ", ".join(empty))
+    if total == 0:
+        messages.append("没有可用节点：检查订阅 URL、网络与 filter；日志里常见 provider 404/超时")
+    elif empty:
+        messages.append("存在空 provider：若非预期，检查对应订阅 URL、网络与 filter")
+    return total > 0 and not empty, messages
+
+
+def verify_with_retry(config: Path, attempts: int = 2, delay: float = 1.5) -> tuple[bool, list[str]]:
+    """启动后 provider 可能还在拉取，给短重试再判不健康。"""
+    ok, messages = verify_config(config)
+    for _ in range(max(0, attempts - 1)):
+        if ok:
+            break
+        time.sleep(delay)
+        ok, messages = verify_config(config)
+    return ok, messages
 
 
 def read_pid_file(path: Path) -> dict[str, Any] | None:
@@ -287,6 +379,18 @@ def cmd_start(args: argparse.Namespace) -> int:
     print(f"工作目录: {home}")
     print(f"日志: {log_file}")
     print(f"PID 文件: {pid_file}")
+    if args.verify:
+        ok, messages = verify_with_retry(config)
+        for message in messages:
+            print(f"[验证] {message}")
+        if not ok:
+            sys.stdout.flush()
+            print(
+                "实例已启动，但验证未通过；用 status --verify 复测或查看日志",
+                file=sys.stderr,
+                flush=True,
+            )
+            return EXIT_STATE
     return EXIT_OK
 
 
@@ -364,6 +468,11 @@ def cmd_status(args: argparse.Namespace) -> int:
                 "started_at": data.get("started_at", ""),
             }
         )
+    verify = None
+    if running and args.verify:
+        ok, messages = verify_config(Path(str(info["config"])))
+        verify = {"ok": ok, "messages": messages}
+        info["verify"] = verify
     if args.json:
         print(json.dumps(info, ensure_ascii=False, indent=2))
     elif running:
@@ -371,10 +480,15 @@ def cmd_status(args: argparse.Namespace) -> int:
         print(f"配置: {info['config']}")
         print(f"工作目录: {info['home']}")
         print(f"日志: {info['log']}")
+        if verify:
+            for message in verify["messages"]:
+                print(f"[验证] {message}")
     elif data:
         print(f"未运行: PID {info['pid']} 已退出（PID 文件 {pid_file}）")
     else:
         print(f"未运行: 没有 PID 文件 {pid_file}")
+    if running and verify and not verify["ok"]:
+        return EXIT_STATE
     return EXIT_OK if running else EXIT_STATE
 
 
@@ -421,13 +535,13 @@ def build_parser() -> argparse.ArgumentParser:
             "只操作脚本自己用 PID 文件记录的进程，不按进程名清理。"
         ),
         epilog=(
-            "退出码: 0 成功或运行中；1 错误或校验失败；2 参数错误；"
-            "3 status 表示未运行。\n"
+            "退出码: 0 成功或运行中且验证通过；1 错误或校验失败；2 参数错误；"
+            "3 status 未运行，或 --verify 未通过。\n"
             "示例:\n"
             "  python mihomo_instance.py validate --config ./config.yaml --mihomo /path/to/mihomo\n"
-            "  python mihomo_instance.py start --config ./config.yaml --home ./runtime --mihomo /path/to/mihomo\n"
+            "  python mihomo_instance.py start --config ./config.yaml --home ./runtime --mihomo /path/to/mihomo --verify\n"
             "  python mihomo_instance.py list --root ./runtime\n"
-            "  python mihomo_instance.py status --home ./runtime\n"
+            "  python mihomo_instance.py status --home ./runtime --verify\n"
             "  python mihomo_instance.py stop --home ./runtime"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -458,6 +572,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_start.add_argument("--pid-file", help="默认 <home>/mihomo.pid")
     p_start.add_argument("--log", help="默认 <home>/mihomo.log")
     p_start.add_argument("--dry-run", action="store_true", help="只打印命令，不校验、不启动")
+    p_start.add_argument(
+        "--verify",
+        action="store_true",
+        help="启动后短查控制 API 与 proxy provider；空 provider 或节点为空时返回 3（进程保留）",
+    )
 
     p_stop = sub.add_parser("stop", help="停止 PID 文件记录的进程")
     p_stop.add_argument("--pid-file", help="PID 文件；与 --home 二选一")
@@ -469,6 +588,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_status.add_argument("--pid-file", help="PID 文件；与 --home 二选一")
     p_status.add_argument("--home", help="工作目录；用它定位 <home>/mihomo.pid")
     p_status.add_argument("--json", action="store_true", help="输出 JSON")
+    p_status.add_argument(
+        "--verify",
+        action="store_true",
+        help="额外检查控制 API 与 proxy provider；未通过返回 3",
+    )
 
     p_list = sub.add_parser("list", help="列出实例根目录下的所有后台实例")
     p_list.add_argument(

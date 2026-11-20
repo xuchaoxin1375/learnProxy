@@ -8,9 +8,13 @@
 - provider 运维：只读检查订阅 / 规则集新鲜度，必要时手动触发更新
 - 学习笔记：`mihomo/` 下的机制说明、排错手册与实测记录
 
+只读体检可以另装公开的 [skills-for-developer](https://github.com/xuchaoxin1375/skills-for-developer)：它的 `inspect_mihomo.py --list-instances` 能一次看 PID、`-d`/`-f`、mixed、controller、listeners 与策略，`probe_local_proxies.py --json` 能核对入口协议与出口。本仓库不依赖它。
+
 脚本只依赖 Python 3.10+ 标准库，Windows / Linux / macOS 通用。下面命令以仓库根目录为当前目录，Windows 把 `python3` 换成 `python`。
 
 ## 快速开始
+
+第一次在新设备部署，先看[新用户部署：从零到可用](mihomo/mihomo@新用户部署@从零到可用.md)；下面是最常用的命令索引。
 
 ```bash
 python3 render_profile.py --list        # 看输出目录、已定义 profile 与产物状态
@@ -18,17 +22,19 @@ python3 render_profile.py --check       # 与模板比对；首次未生成也�
 python3 render_profile.py --check --allow-missing   # 只关心漂移，未生成不算失败
 python3 render_profile.py --dry-run     # 只看会写哪些文件
 python3 render_profile.py               # 渲染全部
-python3 render_profile.py --test --mihomo-home <HomeDir>   # 渲染后跑 mihomo -t
+python3 render_profile.py --test --mihomo-home <HomeDir> --mihomo <mihomo>   # 渲染后跑 mihomo -t
 
 python3 mihomo_instance.py validate --config <config.yaml> --mihomo <mihomo>
-python3 mihomo_instance.py start --config <config.yaml> --home <实例目录> --mihomo <mihomo>
+python3 mihomo_instance.py start --config <config.yaml> --home <实例目录> --mihomo <mihomo> --verify
 python3 mihomo_instance.py list --root <实例根目录>
-python3 mihomo_instance.py status --home <实例目录>
+python3 mihomo_instance.py status --home <实例目录> --verify
 python3 mihomo_instance.py stop --home <实例目录>
 
 python3 check_provider_status.py --secret '<secret>' --summary
 python3 trigger_provider_update.py <provider> --dry-run
 ```
+
+`render_profile.py --test` 的 `--mihomo` 可省略：省略时读 `MIHOMO_BIN`，再在 PATH 中查找 `mihomo` 或 `verge-mihomo`。
 
 `templates/spider_lb.profiles.json` 里的订阅地址是占位符。要填真实订阅，先复制本地骨架再改：
 
@@ -52,8 +58,8 @@ python3 render_profile.py --manifest ~/Desktop/spider_lb.profiles.local.json
 
 | 路径 | 职责 | 读写行为 |
 | --- | --- | --- |
-| `render_profile.py` | 从模板与 `profiles.json`（或 `--manifest` 指定的本地清单）渲染 profile，指纹校验，`--manifest` / `--list` / `--print` / `--check` / `--test` | 默认写 `~/Desktop/mihomo-profiles/*.generated.yaml`；无桌面目录时回退 `~/mihomo-profiles` |
-| `mihomo_instance.py` | 校验、启动、列出、查看和停止独立 mihomo 实例；PID 文件与日志落在实例目录 | 写实例目录；只停自己 PID 文件记录的进程，不按进程名清理 |
+| `render_profile.py` | 从模板与 `profiles.json`（或 `--manifest` 指定的本地清单）渲染 profile，指纹校验，`--manifest` / `--list` / `--print` / `--check` / `--test`（可配 `--mihomo`） | 默认写 `~/Desktop/mihomo-profiles/*.generated.yaml`；无桌面目录时回退 `~/mihomo-profiles` |
+| `mihomo_instance.py` | 校验、启动、列出、查看和停止独立 mihomo 实例；`start/status --verify` 短查控制 API 与 provider；PID 文件与日志落在实例目录 | 写实例目录；只停自己 PID 文件记录的进程，不按进程名清理 |
 | `check_provider_status.py` | 检查 proxy-provider / rule-provider 新鲜度、订阅用量、缓存路径 | 只读，仅 `GET` 与本地文件检查 |
 | `trigger_provider_update.py` | 手动触发订阅或规则集更新、单 provider 测速 | 写操作，会真实下载并消耗流量 |
 | `mihomo_provider.py` | 上面脚本共用的 API、运行时定位、缓存路径、输出格式化 | 工具模块，不单独运行 |
@@ -70,9 +76,9 @@ python3 render_profile.py --manifest ~/Desktop/spider_lb.profiles.local.json
 | `0` | 成功 | 渲染完成、检查通过、更新成功 |
 | `1` | 运行或配置解析失败 | API 不可达、模板 / JSON 解析失败、`mihomo -t` 失败、目标更新失败 |
 | `2` | 用法错误 | 参数冲突、缺前置条件、未知目标、参数值不合法 |
-| `3` | 状态差异或需要人工处理 | `--check` 发现差异、产物被手改、未生成（除非加 `--allow-missing`）、provider 过期、`--require-providers` 没有 provider |
+| `3` | 状态差异或需要人工处理 | `--check` 发现差异、产物被手改、未生成（除非加 `--allow-missing`）、provider 过期、`--require-providers` 没有 provider、`status/start --verify` 未通过 |
 
-`render_profile.py --test` 需要 `--mihomo-home` 或 `MIHOMO_HOME`；缺少时返回 `2`，不会假装校验通过。
+`render_profile.py --test` 需要 `--mihomo-home` 或 `MIHOMO_HOME`；缺少时返回 `2`，不会假装校验通过。mihomo 二进制用 `--mihomo` 指定，或设置 `MIHOMO_BIN`，或放进 PATH（`mihomo`/`verge-mihomo`）。
 
 ## 目录结构
 
@@ -102,16 +108,18 @@ python3 render_profile.py --manifest ~/Desktop/spider_lb.profiles.local.json
 
 ## 后台服务模式：多实例负载均衡
 
-负载均衡默认由 `mihomo_instance.py` 以独立后台实例管理，不依赖切换 Clash Verge profile。每份 profile 有自己的管理端口和入口 band，可以同时运行。完整操作见[后台服务多实例：启动、状态、停止](mihomo/mihomo@后台服务多实例@启动状态停止.md)。
+负载均衡默认由 `mihomo_instance.py` 以独立后台实例管理，不依赖切换 Clash Verge profile。每份 profile 有自己的 mixed 入口、controller 控制口和入口 band，可以同时运行。完整操作见[后台服务多实例：启动、状态、停止](mihomo/mihomo@后台服务多实例@启动状态停止.md)。
 
-| 实例 | 管理端口 | 业务入口 | 策略 | 典型用途 |
+| 实例 | 入口 mixed / 控制口 controller | 业务入口 band | 策略 | 典型用途 |
 | --- | --- | --- | --- | --- |
 | A：`spider_lb_robin` | `17797` / `18997` | `171xx` | `round-robin` | 429、Shopify `/products.json` 等需要轮换 IP 的任务 |
 | B：`spider_lb_ch` | `17897` / `19097` | `172xx` | `consistent-hashing` | 反爬/会话站，同一目标固定出口 |
 | B：`spider_lb_sticky` | `17997` / `19197` | `173xx` | `sticky-sessions` | 10 分钟会话粘性；按需使用 |
 | GUI：雪山 Link 等 | `7897` / `9097` | 无 | 日常 | 日常浏览，不承载采集负载均衡 |
 
-- 默认启动 A + B；173xx 按需再启动。三份都有独立管理端口，模板不再写 `external-controller-pipe`，可以同时运行。
+`17797/17897/17997` 是爬虫用的 mixed 入口，`18997/19097/19197` 是控制 API；不要把 controller 填进 `HTTP_PROXY`，也不要把 mixed 当控制口查 `/version`。
+
+- 默认启动 A + B；173xx 按需再启动。三份都有独立 mixed 与 controller，模板不再写 `external-controller-pipe`，可以同时运行。
 - `default.generated.yaml` 仍是 GUI/legacy 的 171xx + 7897/9097；不要把它当后台服务启动，会和 A 的 171xx 撞。如果切回 GUI 的 `default.generated.yaml`，也先停 `spider_lb_robin`。
 - 爬虫侧：A 用 `http://127.0.0.1:17111`，B 用 `http://127.0.0.1:17211` 或 `http://127.0.0.1:17311`；`+0` 的 `17100/17200/17300` 是不分国家的 all 入口。
 - 每个实例用独立 `--home`，不要和 Clash Verge 的 `-d` 共用。
@@ -123,6 +131,7 @@ python3 render_profile.py --manifest ~/Desktop/spider_lb.profiles.local.json
 
 | 想了解 | 先看 |
 | --- | --- |
+| 第一次部署、从零到可用 | [新用户部署：从零到可用](./mihomo/mihomo@新用户部署@从零到可用.md) |
 | 所有 mihomo 笔记的按任务索引 | [mihomo/README.md](./mihomo/README.md) |
 | 模板、`profiles.json`、端口方案、渲染与校验 | [mihomo@配置模板与生成物@render-profile渲染与校验](./mihomo/mihomo@配置模板与生成物@render-profile渲染与校验.md) |
 | 订阅多久更新、缓存在哪、怎么手动触发 | [mihomo@订阅和规则集的自动更新@interval与手动触发@状态核验](./mihomo/mihomo@订阅和规则集的自动更新@interval与手动触发@状态核验.md) |
@@ -161,3 +170,4 @@ MIT，见 [LICENSE](./LICENSE)。
 - 不负责安装 mihomo、Clash Verge 或机场订阅，只处理已经存在的配置与运行态。
 - 不把生成物自动推送到 GUI；应用配置仍需在客户端里完成。
 - 不是订阅计费工具，`subscriptionInfo` 只反映订阅响应头里的用量，不是实时账单。
+- 只读体检由独立的 skills 仓库负责；本仓库不依赖它，也不复制它的检查规则。

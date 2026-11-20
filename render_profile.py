@@ -565,10 +565,26 @@ def state_text(state: str) -> str:
     }.get(state, state)
 
 
-def run_mihomo_test(paths: list[Path], home_dir: str) -> int:
-    command = shutil.which("mihomo")
-    if not command:
-        raise OSError("找不到 mihomo 命令；--test 需要把 mihomo 放进 PATH")
+def find_mihomo(explicit: str | None = None) -> str:
+    """定位 mihomo：--mihomo > MIHOMO_BIN > PATH 中的 mihomo/verge-mihomo。"""
+    candidate = (explicit or os.environ.get("MIHOMO_BIN", "")).strip()
+    if candidate:
+        path = Path(candidate).expanduser()
+        if path.is_file():
+            return str(path.resolve())
+        raise OSError(f"mihomo 可执行文件不存在: {path}")
+    for name in ("mihomo", "verge-mihomo"):
+        found = shutil.which(name)
+        if found:
+            return found
+    raise OSError(
+        "找不到 mihomo 命令；用 --mihomo 指定、设置 MIHOMO_BIN，"
+        "或把 mihomo/verge-mihomo 放进 PATH"
+    )
+
+
+def run_mihomo_test(paths: list[Path], home_dir: str, mihomo: str | None = None) -> int:
+    command = find_mihomo(mihomo)
     if not os.path.isdir(home_dir):
         raise OSError(f"MihomoHome 不存在: {home_dir}")
 
@@ -676,6 +692,12 @@ def build_parser() -> ArgumentParser:
         default="",
         metavar="目录",
         help="mihomo -t 的 -d 目录；也可用环境变量 MIHOMO_HOME",
+    )
+    parser.add_argument(
+        "--mihomo",
+        default="",
+        metavar="路径",
+        help="mihomo 可执行文件；省略时读 MIHOMO_BIN，或在 PATH 中查找 mihomo/verge-mihomo",
     )
     parser.add_argument(
         "--dry-run",
@@ -1225,7 +1247,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.test:
         try:
-            failed = run_mihomo_test(rendered, test_home)
+            failed = run_mihomo_test(rendered, test_home, args.mihomo)
         except OSError as exc:
             print(f"错误: {exc}", file=sys.stderr)
             return EXIT_ERROR

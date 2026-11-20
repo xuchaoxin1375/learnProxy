@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -67,6 +68,85 @@ class PidFileTests(unittest.TestCase):
                 mi.read_pid_file(path)
 
 
+class ControllerTests(unittest.TestCase):
+    def test_read_controller_strips_quotes_and_comments(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Path(tmp) / "config.yaml"
+            config.write_text(
+                "mixed-port: 19001\n"
+                "external-controller: 127.0.0.1:19097 # api\n"
+                "secret: '1'\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(mi.read_controller(config), ("127.0.0.1:19097", "1"))
+
+    def test_read_controller_ignores_pipe_and_nested_keys(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Path(tmp) / "config.yaml"
+            config.write_text(
+                "external-controller-pipe: \\\\.\\pipe\\verge-mihomo\n"
+                "proxy-providers:\n"
+                "  nested:\n"
+                "    secret: nested\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(mi.read_controller(config), (None, None))
+
+    def test_verify_config_marks_empty_providers_unhealthy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Path(tmp) / "config.yaml"
+            config.write_text(
+                "external-controller: 127.0.0.1:19097\nsecret: '1'\n",
+                encoding="utf-8",
+            )
+
+            def fake_request(base: str, path: str, headers: dict, timeout: float):
+                if path == "/version":
+                    return 200, {"version": "v1.19.33"}
+                return 200, {
+                    "providers": {
+                        "online": {"proxies": []},
+                        "other": {"proxies": [{"name": "a"}]},
+                    }
+                }
+
+            with mock.patch.object(mi, "request_json", side_effect=fake_request):
+                ok, messages = mi.verify_config(config)
+            self.assertFalse(ok)
+            self.assertIn("空 provider: online", messages)
+            self.assertIn("存在空 provider", " ".join(messages))
+
+    def test_verify_config_accepts_nodes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Path(tmp) / "config.yaml"
+            config.write_text(
+                "external-controller: 127.0.0.1:19097\nsecret: '1'\n",
+                encoding="utf-8",
+            )
+
+            def fake_request(base: str, path: str, headers: dict, timeout: float):
+                if path == "/version":
+                    return 200, {"version": "v1.19.33"}
+                return 200, {"providers": {"online": {"proxies": [{"name": "a"}]}}}
+
+            with mock.patch.object(mi, "request_json", side_effect=fake_request):
+                ok, messages = mi.verify_config(config)
+            self.assertTrue(ok)
+            self.assertIn("节点 1 个", " ".join(messages))
+
+    def test_verify_config_reports_api_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Path(tmp) / "config.yaml"
+            config.write_text(
+                "external-controller: 127.0.0.1:19097\nsecret: '1'\n",
+                encoding="utf-8",
+            )
+            with mock.patch.object(mi, "request_json", side_effect=mi.ApiError("boom")):
+                ok, messages = mi.verify_config(config)
+            self.assertFalse(ok)
+            self.assertIn("API 验证失败: boom", messages)
+
+
 class CommandTests(unittest.TestCase):
     def test_instance_command(self) -> None:
         home = Path(tempfile.gettempdir()) / "home"
@@ -85,6 +165,13 @@ class CommandTests(unittest.TestCase):
         self.assertFalse(
             mi.command_matches(cmdline, Path(tempfile.gettempdir()) / "other.yaml", home)
         )
+
+    def test_verify_flags_parse(self) -> None:
+        parser = mi.build_parser()
+        start = parser.parse_args(["start", "--config", "x", "--home", "y", "--verify"])
+        status = parser.parse_args(["status", "--home", "y", "--verify"])
+        self.assertTrue(start.verify)
+        self.assertTrue(status.verify)
 
 
 class CliTests(unittest.TestCase):

@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -134,6 +135,32 @@ class OutputDirTests(unittest.TestCase):
             root = Path(tmp)
             self.assertTrue(rp.path_is_inside(root / "repo" / "profiles", root / "repo"))
             self.assertFalse(rp.path_is_inside(root / "repo", root / "repo" / "profiles"))
+
+
+class MihomoFinderTests(unittest.TestCase):
+    def test_explicit_path_wins(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fake = Path(tmp) / "my-mihomo"
+            fake.write_text("", encoding="utf-8")
+            self.assertEqual(rp.find_mihomo(str(fake)), str(fake.resolve()))
+
+    def test_env_path_is_used(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fake = Path(tmp) / "my-mihomo"
+            fake.write_text("", encoding="utf-8")
+            with mock.patch.dict(os.environ, {"MIHOMO_BIN": str(fake)}):
+                self.assertEqual(rp.find_mihomo(None), str(fake.resolve()))
+
+    def test_missing_explicit_path_raises(self) -> None:
+        with self.assertRaises(OSError):
+            rp.find_mihomo("/no/such/mihomo")
+
+    def test_path_falls_back_to_verge_mihomo(self) -> None:
+        def which(name: str) -> str | None:
+            return "/fake/verge-mihomo" if name == "verge-mihomo" else None
+
+        with mock.patch("render_profile.shutil.which", side_effect=which):
+            self.assertEqual(rp.find_mihomo(None), "/fake/verge-mihomo")
 
 
 class ManifestTests(unittest.TestCase):

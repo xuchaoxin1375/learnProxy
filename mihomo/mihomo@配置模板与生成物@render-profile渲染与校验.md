@@ -39,7 +39,7 @@ mihomo_provider.py         上述脚本共用的 API、路径与运行时定位
 | --- | --- | --- |
 | `templates/spider_lb.template.yaml` | 配置正文，含 `{{...}}` 占位符与生成标记 | 改这里 |
 | `templates/spider_lb.profiles.json` | 公开的 `defaults` + 每份产物的订阅、端口、策略（订阅为占位） | 改结构或占位值 |
-| `templates/spider_lb.profiles.local.example.json` | 本地私有清单骨架：三套后台服务 profile、default 和管理端口、订阅占位符 | 复制成 `.local.json` 后再填真实订阅 |
+| `templates/spider_lb.profiles.local.example.json` | 本地私有清单骨架：三套后台服务 profile、default、mixed/controller 端口、订阅占位符 | 复制成 `.local.json` 后再填真实订阅 |
 | `templates/spider_lb.profiles.local.json` | 可选的本地私有清单，放真实订阅；已被 `.gitignore` 忽略 | 本地改这里，不提交 |
 | `<输出目录>/default.generated.yaml`、`spider_lb_robin.generated.yaml`、`spider_lb_ch.generated.yaml`、`spider_lb_sticky.generated.yaml` | 生成物，头部有修订日期与 `# 生成指纹:sha256:...`；`<输出目录>` 默认是 `~/Desktop/mihomo-profiles`，无桌面目录时是 `~/mihomo-profiles` | 不要手改，会被覆盖或触发 `--force` 要求 |
 | `render_profile.py` | 渲染、指纹校验、可选跑 `mihomo -t` | 工具本身 |
@@ -77,10 +77,12 @@ mihomo_provider.py         上述脚本共用的 API、路径与运行时定位
 公开仓库里的 `spider_lb.profiles.json` 只放占位订阅。需要真实订阅时，复制一份本地清单再改：
 
 ```bash
-cp templates/spider_lb.profiles.json templates/spider_lb.profiles.local.json
-# 编辑 templates/spider_lb.profiles.local.json 里的 subscriptions
-python3 render_profile.py --manifest templates/spider_lb.profiles.local.json
+cp templates/spider_lb.profiles.local.example.json ~/spider_lb.profiles.local.json
+# 编辑 ~/spider_lb.profiles.local.json 里的 subscriptions
+python3 render_profile.py --manifest ~/spider_lb.profiles.local.json
 ```
+
+优先用 `spider_lb.profiles.local.example.json` 骨架：它只留一个订阅占位，够 A/B/C 共用；公开的 `spider_lb.profiles.json` 里 `ch` 还有第二个占位 token，复制它容易漏改。
 
 清单选择顺序：
 
@@ -258,7 +260,7 @@ proxy-providers:
 
 选 1xxxx 的原因：避开 7890-7899（Clash/mihomo 客户端）、9090/9091/9097（API）、1080/1081/10808-10810 等常见端口，也低于系统临时端口区间（Windows 49152+、Linux 32768+）。每段留 79 个国家位，当前用 10 个（含 uk）。
 
-三套后台服务 profile 的监听 band 不重叠（171xx / 172xx / 173xx），管理端口也已分开；`default` 是 GUI/legacy：
+三套后台服务 profile 的监听 band 不重叠（171xx / 172xx / 173xx），mixed 与 controller 也已分开；`default` 是 GUI/legacy：
 
 | profile | mixedPort | externalControllerPort | 典型用途 |
 | --- | --- | --- | --- |
@@ -351,7 +353,7 @@ A、B 可以同时运行；173xx 的 `spider_lb_sticky` 也按同样方式启动
 | 校验同步 | `python3 render_profile.py --check` | 与模板一致退出 `0`；未生成、有差异或产物被手改退出 `3` |
 | 校验时忽略未生成 | `python3 render_profile.py --check --allow-missing` | 只关心漂移；未生成不算失败，手改或过期仍退出 `3` |
 | 覆盖手改 | `python3 render_profile.py --force` | 生成物被手改过时的显式入口 |
-| 渲染并测配置 | `python3 render_profile.py --test --mihomo-home <HomeDir>` | 渲染后调 `mihomo -t`；缺 `--mihomo-home` / `MIHOMO_HOME` 返回 `2` |
+| 渲染并测配置 | `python3 render_profile.py --test --mihomo-home <HomeDir> --mihomo <mihomo>` | 渲染后调 `mihomo -t`；`--mihomo` 省略时读 `MIHOMO_BIN` 或在 PATH 查找；缺 `--mihomo-home` / `MIHOMO_HOME` 返回 `2` |
 
 `--list` 会先打印实际输出目录，再扫描该目录；识别依据是 `.generated.yaml` 后缀或文件头指纹，所以 `demo.yaml`、`mihomo.template.yaml` 这类手写文件不会混进来：
 
@@ -433,7 +435,7 @@ Windows 上 PowerShell 5.1 的 `>` 会把输出转成 UTF-16，需要时改用 `
 - 生成物头部指纹存在，且与正文重算一致（脚本自检即可）
 - 新增或调整国家入口后，旧国家的端口没有变化（连号模式只能追加，迁移到显式表可彻底避免重排）
 - 新增在线订阅后，`use-providers` 里自动出现该 provider，生成物能被 `mihomo -t` 通过
-- `--test --mihomo-home <HomeDir>` 或 `mihomo -t -d <HomeDir> -f <产物>` 通过
+- `--test --mihomo-home <HomeDir> --mihomo <mihomo>` 或 `mihomo -t -d <HomeDir> -f <产物>` 通过
 - 在 GUI 重新应用后，`clash-verge.yaml` 里能看到本次改动（如 `interval: 43200`、`IN-NAME`）
 - 用只读脚本确认 provider 新鲜度：`python3 check_provider_status.py --secret '<secret>'`
 - `python3 -m unittest discover -s tests` 全部通过
